@@ -3,7 +3,7 @@ import {
   WebGLRenderer, ACESFilmicToneMapping, sRGBEncoding, Color, CylinderGeometry,
   RepeatWrapping, DoubleSide, BoxGeometry, Mesh, PointLight, MeshPhysicalMaterial,
   PerspectiveCamera, Scene, PMREMGenerator, PCFSoftShadowMap, Vector2, Vector3, TextureLoader,
-  SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, FloatType, VSMShadowMap
+  SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, FloatType, VSMShadowMap, ConeGeometry
 } from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
 
 import { OrbitControls } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/controls/OrbitControls';
@@ -60,15 +60,31 @@ let envmap;
 // we can control max height to make things more flat or not.
 const MAX_HEIGHT = 10;
 
+// map dimensions
+const LENGTH = 20; 
+const MAX_DISTANCE_THRESHOLD = Math.floor(0.8*LENGTH);
+const BABYRABBITS_NUM = 3;
+const WOLVES_NUM = 1;
+const BEARTRAPS_NUM = 6;
+const HUNTERS_NUM = 0;
+
 // dictionary that maps the tilePosition to the hex
 let positionToHexDict = new Map();
 // keyState of up down left or right
 let keyState;
 // radius of sphere
 let radius = 1;
+// sphere
+let sphere;
 // dictionary that maps xy 1D coordinate to tilePosition
 let XYtoPositionDict = new Map();
 let babySpheres = [];
+let hunters = [];
+let hunterZones = [];
+let lives = 3;
+let bearTraps = [];
+let wolves = [];
+
 
 
 // this entire function is asynchronous, meaning that it is not concerned with
@@ -103,11 +119,10 @@ let babySpheres = [];
 
   // create 40x40 hex map, varying height using simplex noise. This will be
   // larger for our purposes, but I haven't tested quite yet.
-  for(let i = -20; i <= 20; i++) {
-    for(let j = -20; j <= 20; j++) {
+  for(let i = -LENGTH; i <= LENGTH; i++) {
+    for(let j = -LENGTH; j <= LENGTH; j++) {
       let position = tileToPosition(i, j);
-      //console.log(position);
-      if(position.length() > 16) continue;
+      if(position.length() > MAX_DISTANCE_THRESHOLD) continue;
       XYtoPositionDict.set(XYto1D(i,j), position);
 
       let noise = (simplex.noise2D(i * 0.1, j * 0.1) + 1) * 0.5;
@@ -187,7 +202,7 @@ let babySpheres = [];
   // make a new Spherical object
   const geometry = new SphereGeometry( radius, 32, 16 );
   const material = new MeshBasicMaterial( { color: 0xffff00 } );
-  const sphere = new Mesh( geometry, material );
+  sphere = new Mesh( geometry, material );
     // translate sphere 
   let tilePosition = XYtoPositionDict.get(XYto1D(0, 0));
   let translationVec = positionToHexDict.get(tilePosition)[1];
@@ -202,20 +217,39 @@ let babySpheres = [];
   // add event listener for sphere
   document.addEventListener("keydown", function (event) {
     keyState = event.key;
-    updateSphere(sphere);
+    updateSphere();
   });
 
   // add baby rabbits (for now, spheres with smaller radii)
-  for (let i = 0; i < 3; i++) {
+  generateBabyRabbits();
+  // add hunters to the scene
+  generateHunters();
+  // add bear traps to the scene
+  generateBearTraps();
+  generateWolves();
+  // move wolves every second
+  window.setInterval(updateWolves, 2000);
+
+  renderer.setAnimationLoop(() => {
+    controls.update();
+    renderer.render(scene, camera);
+    //updateWolves();
+    //updateSphere(sphere);
+  });
+})();
+
+// creates baby rabbits in the form of white spheres of half the radius, and adds them to the scene
+function generateBabyRabbits() {
+  for (let i = 0; i < BABYRABBITS_NUM; i++) {
     let geometry = new SphereGeometry( radius/2, 32, 16 );
-    let material = new MeshBasicMaterial( { color: 0xff0000} );
+    let material = new MeshBasicMaterial( { color: 0xffffff} );
     let babySphere = new Mesh( geometry, material );
     babySpheres.push(babySphere);
     scene.add(babySphere);
     // randomly put baby rabbits on the scene
     while (true) {
-      let i = Math.floor(16* Math.random() - 8);
-      let j = Math.floor(16 * Math.random() - 8);
+      let i = Math.floor(MAX_DISTANCE_THRESHOLD* Math.random() - MAX_DISTANCE_THRESHOLD/2);
+      let j = Math.floor(MAX_DISTANCE_THRESHOLD * Math.random() - MAX_DISTANCE_THRESHOLD/2);
       let tilePosition = XYtoPositionDict.get(XYto1D(i, j));
       // keep looking for tiles until you have one that is actually on the terrain
       if (tilePosition == undefined) continue;
@@ -228,33 +262,133 @@ let babySpheres = [];
       break;
     }
   }
-
-
-  renderer.setAnimationLoop(() => {
-    controls.update();
-    renderer.render(scene, camera);
-    //updateSphere(sphere);
-  });
-})();
-/*
-function animateSphereMovement(sphere, currPosition, translationVec, timeStamp) {
-
-  let timeStampRatio = timeStamp 
-
-  sphere.position.x = (1 -  timeStampRatio) * currPosition.x + timeStampRatio * translationVec.x;
-  sphere.position.y = (1 -  timeStampRatio) * currPosition.y +  timeStampRatio * (translationVec.y + radius);
-  sphere.position.z = (1 -  timeStampRatio) * currPosition.z +  timeStampRatio * (translationVec.z);
-
-  requestAnimationFrame(animateSphereMovement);
 }
-*/
+// creates hunters in the form of blue rectangular boxes, and adds them to the scene
+function generateHunters() {
+  for (let i = 0; i < HUNTERS_NUM; i++) {
+    let geometry = new BoxGeometry( radius/2, 4, radius/2);
+    let material = new MeshBasicMaterial( { color:  0x0000FF} );
+    let hunter = new Mesh( geometry, material );
+    hunters.push(hunter);
+    scene.add(hunter);
+    // add hunterZones
+    geometry = new CylinderGeometry( 4 * radius, 4* radius, 0, 40, true );
+    material = new MeshBasicMaterial( {color: 0xff0000} );
+    let hunterZone = new Mesh( geometry, material );
+
+    hunterZones.push(hunterZone);
+    scene.add(hunterZone);
+    // randomly put hunters on the scene
+    while (true) {
+      let i = Math.floor(MAX_DISTANCE_THRESHOLD* Math.random() - MAX_DISTANCE_THRESHOLD/2);
+      let j = Math.floor(MAX_DISTANCE_THRESHOLD * Math.random() - MAX_DISTANCE_THRESHOLD/2);
+      let tilePosition = XYtoPositionDict.get(XYto1D(i, j));
+      // keep looking for tiles until you have one that is actually on the terrain
+      if (tilePosition == undefined) continue;
+      let translationVec = positionToHexDict.get(tilePosition)[1];
+      hunter.translateX(translationVec.x);
+      hunter.translateY(translationVec.y + radius/2);
+      hunter.translateZ(translationVec.z);
+      hunter.tileX = i;
+      hunter.tileY = j;
+      // change position of hunterZone
+      hunterZone.translateX(translationVec.x);
+      hunterZone.translateY(translationVec.y);
+      hunterZone.translateZ(translationVec.z);
+      hunterZone.tileX = i;
+      hunterZone.tileY = j;
+      break;
+    }
+  }
+}
+// creates bear traps in the form of yellow cones, and adds them to the scene
+function generateBearTraps() {
+  for (let i = 0; i < BEARTRAPS_NUM; i++) {
+    let geometry = new ConeGeometry( 1, 5, 32 );
+    let material = new MeshBasicMaterial( {color: 0x808080} );
+    let bearTrap = new Mesh( geometry, material );
+
+    bearTraps.push(bearTrap);
+    scene.add(bearTrap);
+    // randomly put bear traps on the scene
+    while (true) {
+      let i = Math.floor(MAX_DISTANCE_THRESHOLD* Math.random() - MAX_DISTANCE_THRESHOLD/2);
+      let j = Math.floor(MAX_DISTANCE_THRESHOLD * Math.random() - MAX_DISTANCE_THRESHOLD/2);
+      let tilePosition = XYtoPositionDict.get(XYto1D(i, j));
+      // keep looking for tiles until you have one that is actually on the terrain
+      if (tilePosition == undefined) continue;
+      let translationVec = positionToHexDict.get(tilePosition)[1];
+      bearTrap.translateX(translationVec.x);
+      bearTrap.translateY(translationVec.y);
+      bearTrap.translateZ(translationVec.z);
+      bearTrap.tileX = i;
+      bearTrap.tileY = j;
+      break;
+    }
+  }
+}
+// creates wolves in the form of yellow black spheres, and adds them to the scene
+function generateWolves() {
+  for (let i = 0; i < WOLVES_NUM; i++) {
+    let geometry = new SphereGeometry( radius/2, 32, 16 ); 
+    let material = new MeshBasicMaterial( {color: 0x000000} );
+    let wolf = new Mesh( geometry, material );
+
+    wolves.push(wolf);
+    scene.add(wolf);
+    // randomly put bear traps on the scene
+    while (true) {
+      let i = Math.floor(MAX_DISTANCE_THRESHOLD* Math.random() - MAX_DISTANCE_THRESHOLD/2);
+      let j = Math.floor(MAX_DISTANCE_THRESHOLD * Math.random() - MAX_DISTANCE_THRESHOLD/2);
+      let tilePosition = XYtoPositionDict.get(XYto1D(i, j));
+      // keep looking for tiles until you have one that is actually on the terrain
+      if (tilePosition == undefined) continue;
+      let translationVec = positionToHexDict.get(tilePosition)[1];
+      wolf.translateX(translationVec.x);
+      wolf.translateY(translationVec.y + radius/2);
+      wolf.translateZ(translationVec.z);
+      wolf.tileX = i;
+      wolf.tileY = j;
+      break;
+    }
+  }
+}
+// wolves move randomly to a neighboring tile
+function updateWolves() {
+  //delta = clock.getDelta();
+  for (let wolf of wolves) {
+    // keep loooking for tiles for where the wolf can move to randomly
+    while (true) {
+      let x = Math.random();
+      let y = Math.random();
+      let dirX = 0;
+      let dirY = 0;
+      if (x < 1/3) dirX += 1;
+      else if (x < 2/3) dirX += -1;
+      if (y < 1/3) dirY += 1;
+      else if (y < 2/3) dirY += -1;
+
+      let tilePosition = XYtoPositionDict.get(XYto1D(wolf.tileX + dirX, wolf.tileY + dirY));
+      if (tilePosition == undefined) continue;
+      let translationVec = positionToHexDict.get(tilePosition)[1];
+      wolf.position.x = translationVec.x;
+      wolf.position.y = translationVec.y + radius/2;
+      wolf.position.z = translationVec.z;
+      wolf.tileX += dirX;
+      wolf.tileY += dirY;
+      break;
+    }
+    if ((sphere.position.x == wolf.position.x) && (sphere.position.z == wolf.position.z)) {
+      //console.log("CONTACT WAS MADE WITH WOLF");
+      updateLives();
+    }
+  }
+}
 // sphere moves to next tile upon click
-function updateSphere(sphere) {
-  console.log(sphere.position);
+function updateSphere() {
   let prevX = sphere.tileX;
   let prevY = sphere.tileY;
-  //console.log(keyState);
-  console.log(tileToPosition(sphere.tileX, sphere.tileY));
+
   if (keyState == "ArrowLeft") sphere.tileX += 1;
   if (keyState == "ArrowRight") sphere.tileX += -1;
   if (keyState == "ArrowUp") sphere.tileY += 1;
@@ -275,48 +409,45 @@ function updateSphere(sphere) {
   sphere.position.y = translationVec.y + radius;
   sphere.position.z = translationVec.z; 
 
-  updateBabySpheres(sphere);
+  updateBabySpheres();
+  updateHunterZones();
+  updateBearTraps();
 
 }
-// clear Baby Spheres if they are in contact with sphere
-function updateBabySpheres(sphere) {
+// Baby Spheres disappear upon contact with sphere
+function updateBabySpheres() {
   for (let babySphere of babySpheres) {
     if ((babySphere.tileX == sphere.tileX) && (babySphere.tileY == sphere.tileY)) {
       scene.remove(babySphere);
     }
   }
 }
-// sphere moves randomly 
-function updateSphere2(sphere) {
-  if (sphere.coordinates.x >= 20) {
-    sphere.translateX(-0.05);
-    sphere.coordinates.x += -1;
+// if sphere/rabbit enters hunter zone, there is a probability p chance that the rabbit loses a life
+function updateHunterZones() {
+  for (let hunterZone of hunterZones) {
+    if (sphere.position.distanceTo(hunterZone.position) < 4 * radius) {
+      let p = Math.random();
+      if (p < 0.3) {
+        updateLives();
+      }
+    }
   }
-  else if (sphere.coordinates.x <= -20) {
-    sphere.translateX(0.05);
-    sphere.coordinates.x += 1;
+}
+function updateLives() {
+  if (lives != 0) {
+    lives--;
+    let heartString = "";
+    for (let i = 0; i < lives; i++) heartString += "❤️";
+    document.getElementById('Number of Lives').innerHTML = heartString;
   }
-  else {
-    let p = Math.random();
-    let dir = p >= 0.5 ? 1 : -1;
-    sphere.translateX(dir * 1);
-    sphere.coordinates.x += dir *1;
+}
+// bear traps spin up out of the ground upon contact with sphere
+function updateBearTraps() {
+  for (let bearTrap of bearTraps) {
+    if ((bearTrap.tileX == sphere.tileX) && (bearTrap.tileY == sphere.tileY)) {
+      bearTrap.translateY(10);
+    }
   }
-  if (sphere.coordinates.y >= 20) {
-    sphere.translateY(-1);
-    sphere.coordinates.y += -1;
-  }
-  else if (sphere.coordinates.y <= -20) {
-    sphere.translateY(1);
-    sphere.coordinates.y += 1;
-  }
-  else {
-    let p = Math.random();
-    let dir = p >= 0.5 ? 1 : -1;
-    sphere.translateY(dir * 1);
-    sphere.coordinates.y += dir * 1;
-  }
-  requestAnimationFrame(updateSphere);
 }
 // converts x,y coordinate to 1D (dumb implementation)
 function XYto1D(x, y) {
@@ -336,7 +467,6 @@ function tileToPosition(tileX, tileY) {
 function hexGeometry(height, position) {
   let geo  = new CylinderGeometry(1, 1, height, 6, 1, false);
   geo.translate(position.x, height * 0.5, position.y);
-  // if (position == tileToPosition(0, 0)) console.log(height);
 
   return geo;
 }
@@ -359,9 +489,6 @@ let grassGeo = new BoxGeometry(0,0,0);
 // aggregate geometry that is defined above. Uses aforementioned thresholds.
 function hex(height, position) {
   let geo = hexGeometry(height, position);
-  //console.log(position);
-  //console.log(position.x);
-  //console.log(position.y);
   positionToHexDict.set(position, [geo, new Vector3(position.x, height, position.y)]);
   if(height > STONE_HEIGHT) {
     stoneGeo = mergeBufferGeometries([geo, stoneGeo]);
