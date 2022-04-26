@@ -2,7 +2,7 @@
 import {
   WebGLRenderer, ACESFilmicToneMapping, sRGBEncoding, Color, CylinderGeometry,
   RepeatWrapping, DoubleSide, BoxGeometry, Mesh, PointLight, MeshPhysicalMaterial,
-  PerspectiveCamera, Scene, PMREMGenerator, PCFSoftShadowMap, Vector2, TextureLoader,
+  PerspectiveCamera, Scene, PMREMGenerator, PCFSoftShadowMap, Vector2, Vector3, TextureLoader,
   SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, FloatType, VSMShadowMap
 } from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
 
@@ -10,6 +10,7 @@ import { OrbitControls } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/contro
 import { RGBELoader } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/loaders/RGBELoader';
 import { mergeBufferGeometries } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/utils/BufferGeometryUtils';
 import SimplexNoise from 'https://cdn.skypack.dev/simplex-noise';
+//import { TWEEN } from 'three/examples/jsm/libs/tween.module.min.js';
 
 // Initialize Scene
 const scene = new Scene();
@@ -59,6 +60,17 @@ let envmap;
 // we can control max height to make things more flat or not.
 const MAX_HEIGHT = 10;
 
+// dictionary that maps the tilePosition to the hex
+let positionToHexDict = new Map();
+// keyState of up down left or right
+let keyState;
+// radius of sphere
+let radius = 1;
+// dictionary that maps xy 1D coordinate to tilePosition
+let XYtoPositionDict = new Map();
+let babySpheres = [];
+
+
 // this entire function is asynchronous, meaning that it is not concerned with
 // the order in which things are declared/instantiated as long as dependencies
 // are declared/instantiated at some point within this file. Note that this function
@@ -94,13 +106,15 @@ const MAX_HEIGHT = 10;
   for(let i = -20; i <= 20; i++) {
     for(let j = -20; j <= 20; j++) {
       let position = tileToPosition(i, j);
-
+      //console.log(position);
       if(position.length() > 16) continue;
+      XYtoPositionDict.set(XYto1D(i,j), position);
 
       let noise = (simplex.noise2D(i * 0.1, j * 0.1) + 1) * 0.5;
       noise = Math.pow(noise, 1.5);
 
       hex(noise * MAX_HEIGHT, position, envmap);
+      
     }
   }
 
@@ -170,11 +184,144 @@ const MAX_HEIGHT = 10;
   mapFloor.position.set(0, -MAX_HEIGHT * 0.05, 0);
   scene.add(mapFloor);
 
+  // make a new Spherical object
+  const geometry = new SphereGeometry( radius, 32, 16 );
+  const material = new MeshBasicMaterial( { color: 0xffff00 } );
+  const sphere = new Mesh( geometry, material );
+    // translate sphere 
+  let tilePosition = XYtoPositionDict.get(XYto1D(0, 0));
+  let translationVec = positionToHexDict.get(tilePosition)[1];
+  sphere.translateX(translationVec.x);
+  sphere.translateY(translationVec.y + radius);
+  sphere.translateZ(translationVec.z);
+  sphere.tileX = 0;
+  sphere.tileY = 0;
+
+  scene.add(sphere);
+
+  // add event listener for sphere
+  document.addEventListener("keydown", function (event) {
+    keyState = event.key;
+    updateSphere(sphere);
+  });
+
+  // add baby rabbits (for now, spheres with smaller radii)
+  for (let i = 0; i < 3; i++) {
+    let geometry = new SphereGeometry( radius/2, 32, 16 );
+    let material = new MeshBasicMaterial( { color: 0xff0000} );
+    let babySphere = new Mesh( geometry, material );
+    babySpheres.push(babySphere);
+    scene.add(babySphere);
+    // randomly put baby rabbits on the scene
+    while (true) {
+      let i = Math.floor(16* Math.random() - 8);
+      let j = Math.floor(16 * Math.random() - 8);
+      let tilePosition = XYtoPositionDict.get(XYto1D(i, j));
+      // keep looking for tiles until you have one that is actually on the terrain
+      if (tilePosition == undefined) continue;
+      let translationVec = positionToHexDict.get(tilePosition)[1];
+      babySphere.translateX(translationVec.x);
+      babySphere.translateY(translationVec.y + radius/2);
+      babySphere.translateZ(translationVec.z);
+      babySphere.tileX = i;
+      babySphere.tileY = j;
+      break;
+    }
+  }
+
+
   renderer.setAnimationLoop(() => {
     controls.update();
     renderer.render(scene, camera);
+    //updateSphere(sphere);
   });
 })();
+/*
+function animateSphereMovement(sphere, currPosition, translationVec, timeStamp) {
+
+  let timeStampRatio = timeStamp 
+
+  sphere.position.x = (1 -  timeStampRatio) * currPosition.x + timeStampRatio * translationVec.x;
+  sphere.position.y = (1 -  timeStampRatio) * currPosition.y +  timeStampRatio * (translationVec.y + radius);
+  sphere.position.z = (1 -  timeStampRatio) * currPosition.z +  timeStampRatio * (translationVec.z);
+
+  requestAnimationFrame(animateSphereMovement);
+}
+*/
+// sphere moves to next tile upon click
+function updateSphere(sphere) {
+  console.log(sphere.position);
+  let prevX = sphere.tileX;
+  let prevY = sphere.tileY;
+  //console.log(keyState);
+  console.log(tileToPosition(sphere.tileX, sphere.tileY));
+  if (keyState == "ArrowLeft") sphere.tileX += 1;
+  if (keyState == "ArrowRight") sphere.tileX += -1;
+  if (keyState == "ArrowUp") sphere.tileY += 1;
+  if (keyState == "ArrowDown") sphere.tileY += -1;
+  let tilePosition = XYtoPositionDict.get(XYto1D(sphere.tileX, sphere.tileY));
+
+  if (tilePosition == undefined) {
+    sphere.tileX = prevX;
+    sphere.tileY = prevY;
+    return;
+  }
+
+  let translationVec = positionToHexDict.get(tilePosition)[1];
+  let currPosition = sphere.position;
+  //animateSphereMovement(sphere, currPosition, translationVec);
+  
+  sphere.position.x = translationVec.x;
+  sphere.position.y = translationVec.y + radius;
+  sphere.position.z = translationVec.z; 
+
+  updateBabySpheres(sphere);
+
+}
+// clear Baby Spheres if they are in contact with sphere
+function updateBabySpheres(sphere) {
+  for (let babySphere of babySpheres) {
+    if ((babySphere.tileX == sphere.tileX) && (babySphere.tileY == sphere.tileY)) {
+      scene.remove(babySphere);
+    }
+  }
+}
+// sphere moves randomly 
+function updateSphere2(sphere) {
+  if (sphere.coordinates.x >= 20) {
+    sphere.translateX(-0.05);
+    sphere.coordinates.x += -1;
+  }
+  else if (sphere.coordinates.x <= -20) {
+    sphere.translateX(0.05);
+    sphere.coordinates.x += 1;
+  }
+  else {
+    let p = Math.random();
+    let dir = p >= 0.5 ? 1 : -1;
+    sphere.translateX(dir * 1);
+    sphere.coordinates.x += dir *1;
+  }
+  if (sphere.coordinates.y >= 20) {
+    sphere.translateY(-1);
+    sphere.coordinates.y += -1;
+  }
+  else if (sphere.coordinates.y <= -20) {
+    sphere.translateY(1);
+    sphere.coordinates.y += 1;
+  }
+  else {
+    let p = Math.random();
+    let dir = p >= 0.5 ? 1 : -1;
+    sphere.translateY(dir * 1);
+    sphere.coordinates.y += dir * 1;
+  }
+  requestAnimationFrame(updateSphere);
+}
+// converts x,y coordinate to 1D (dumb implementation)
+function XYto1D(x, y) {
+  return 1000* x + y;
+}
 
 // converts index numbers for X and Y into proper coordinates for hexagons
 // actually adds the hexagons edge to edge, meaning the hexagons wiggle around
@@ -189,6 +336,7 @@ function tileToPosition(tileX, tileY) {
 function hexGeometry(height, position) {
   let geo  = new CylinderGeometry(1, 1, height, 6, 1, false);
   geo.translate(position.x, height * 0.5, position.y);
+  // if (position == tileToPosition(0, 0)) console.log(height);
 
   return geo;
 }
@@ -211,7 +359,10 @@ let grassGeo = new BoxGeometry(0,0,0);
 // aggregate geometry that is defined above. Uses aforementioned thresholds.
 function hex(height, position) {
   let geo = hexGeometry(height, position);
-
+  //console.log(position);
+  //console.log(position.x);
+  //console.log(position.y);
+  positionToHexDict.set(position, [geo, new Vector3(position.x, height, position.y)]);
   if(height > STONE_HEIGHT) {
     stoneGeo = mergeBufferGeometries([geo, stoneGeo]);
   } else if(height > DIRT_HEIGHT) {
