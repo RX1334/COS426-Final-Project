@@ -3,9 +3,10 @@ import {
   WebGLRenderer, ACESFilmicToneMapping, sRGBEncoding, Color, CylinderGeometry,
   RepeatWrapping, DoubleSide, BoxGeometry, Mesh, PointLight, MeshPhysicalMaterial,
   PerspectiveCamera, Scene, PMREMGenerator, PCFSoftShadowMap, Vector2, Vector3, TextureLoader,
-  SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, FloatType, VSMShadowMap, ConeGeometry
+  SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, FloatType, VSMShadowMap, ConeGeometry, 
+  
 } from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
-
+import { FBXLoader } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/loaders/FBXLoader';
 import { OrbitControls } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/controls/OrbitControls';
 import { RGBELoader } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/loaders/RGBELoader';
 import { mergeBufferGeometries } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/utils/BufferGeometryUtils';
@@ -65,27 +66,53 @@ const LENGTH = 20;
 const MAX_DISTANCE_THRESHOLD = Math.floor(0.8*LENGTH);
 const BABYRABBITS_NUM = 3;
 const WOLVES_NUM = 1;
-const BEARTRAPS_NUM = 6;
-const HUNTERS_NUM = 0;
+const BEARTRAPS_NUM = 2;
+const HUNTERS_NUM = 1;
 
 // dictionary that maps the tilePosition to the hex
 let positionToHexDict = new Map();
 // keyState of up down left or right
 let keyState;
-// radius of sphere
+// radius of rabbit
 let radius = 1;
-// sphere
-let sphere;
+
+let globalRabbit;
 // dictionary that maps xy 1D coordinate to tilePosition
 let XYtoPositionDict = new Map();
-let babySpheres = [];
+let babyRabbits = [];
 let hunters = [];
 let hunterZones = [];
-let lives = 3;
+let lives = 10;
 let bearTraps = [];
 let wolves = [];
 
 
+/* code taken below is from: 
+https://www.reddit.com/r/learnjavascript/comments/9jovpn/how_can_i_load_a_3d_model_asynchronously_in/ */
+
+async function configureMaterials(child){
+  if(child instanceof Mesh){
+      //load in the texture and "wait" until the texture's loaded - assuming the TextureLoader works like the FBXLoader
+      const texturemap           = await new Promise(loadTexture);
+      //configure the material now that we have all of the data
+      child.material.map         = texturemap;
+      child.material.needsUpdate = true;
+  }
+}
+//helper function to load-in the dummy model
+function loadDummyRabbit(resolve, reject){
+  const fbxLoader = new FBXLoader();
+  const dummyPath = "assets/rabbit.FBX";
+  fbxLoader.load(dummyPath, (dummy) => resolve(dummy));
+}
+/*
+//helper function to load-in the dummy model
+function loadDummyWolf(resolve, reject){
+  const fbxLoader = new FBXLoader();
+  const dummyPath = "assets/bear-fbx.FBX";
+  fbxLoader.load(dummyPath, (dummy) => resolve(dummy));
+}*/
+/* ends here */
 
 // this entire function is asynchronous, meaning that it is not concerned with
 // the order in which things are declared/instantiated as long as dependencies
@@ -101,6 +128,14 @@ let wolves = [];
   let envmapTexture = await new RGBELoader().loadAsync("assets/envmap.hdr");
   let rt = pmrem.fromEquirectangular(envmapTexture);
   envmap = rt.texture;
+
+
+  //load in the dummy fbx model here, "wait" until it's done
+  const rabbit = await new Promise(loadDummyRabbit);
+  //do your material setup here like normal
+  rabbit.traverse(configureMaterials);
+  //assuming your scene doesn't need to wait for the textures, add it straight way
+  rabbit.scale.multiplyScalar(0.07);
 
   // load in textures for different hex types. Using minecraft texture packs
   // is actually a very good idea for skinning the tiles.
@@ -199,25 +234,29 @@ let wolves = [];
   mapFloor.position.set(0, -MAX_HEIGHT * 0.05, 0);
   scene.add(mapFloor);
 
+  /*
   // make a new Spherical object
   const geometry = new SphereGeometry( radius, 32, 16 );
   const material = new MeshBasicMaterial( { color: 0xffff00 } );
-  sphere = new Mesh( geometry, material );
-    // translate sphere 
+  sphere = new Mesh( geometry, material ); 
+
+  sphere = rabbit; */
+  globalRabbit = rabbit;
+    // translate rabbit 
   let tilePosition = XYtoPositionDict.get(XYto1D(0, 0));
   let translationVec = positionToHexDict.get(tilePosition)[1];
-  sphere.translateX(translationVec.x);
-  sphere.translateY(translationVec.y + radius);
-  sphere.translateZ(translationVec.z);
-  sphere.tileX = 0;
-  sphere.tileY = 0;
+  rabbit.translateX(translationVec.x);
+  rabbit.translateY(translationVec.y + radius);
+  rabbit.translateZ(translationVec.z);
+  rabbit.tileX = 0;
+  rabbit.tileY = 0;
 
-  scene.add(sphere);
+  scene.add(rabbit);
 
-  // add event listener for sphere
+  // add event listener for rabbit
   document.addEventListener("keydown", function (event) {
     keyState = event.key;
-    updateSphere();
+    updateRabbit();
   });
 
   // add baby rabbits (for now, spheres with smaller radii)
@@ -243,9 +282,9 @@ function generateBabyRabbits() {
   for (let i = 0; i < BABYRABBITS_NUM; i++) {
     let geometry = new SphereGeometry( radius/2, 32, 16 );
     let material = new MeshBasicMaterial( { color: 0xffffff} );
-    let babySphere = new Mesh( geometry, material );
-    babySpheres.push(babySphere);
-    scene.add(babySphere);
+    let babyRabbit = new Mesh( geometry, material );
+    babyRabbits.push(babyRabbit);
+    scene.add(babyRabbit);
     // randomly put baby rabbits on the scene
     while (true) {
       let i = Math.floor(MAX_DISTANCE_THRESHOLD* Math.random() - MAX_DISTANCE_THRESHOLD/2);
@@ -254,11 +293,11 @@ function generateBabyRabbits() {
       // keep looking for tiles until you have one that is actually on the terrain
       if (tilePosition == undefined) continue;
       let translationVec = positionToHexDict.get(tilePosition)[1];
-      babySphere.translateX(translationVec.x);
-      babySphere.translateY(translationVec.y + radius/2);
-      babySphere.translateZ(translationVec.z);
-      babySphere.tileX = i;
-      babySphere.tileY = j;
+      babyRabbit.translateX(translationVec.x);
+      babyRabbit.translateY(translationVec.y + radius/2);
+      babyRabbit.translateZ(translationVec.z);
+      babyRabbit.tileX = i;
+      babyRabbit.tileY = j;
       break;
     }
   }
@@ -378,54 +417,54 @@ function updateWolves() {
       wolf.tileY += dirY;
       break;
     }
-    if ((sphere.position.x == wolf.position.x) && (sphere.position.z == wolf.position.z)) {
+    if ((globalRabbit.position.x == wolf.position.x) && (globalRabbit.position.z == wolf.position.z)) {
       //console.log("CONTACT WAS MADE WITH WOLF");
       updateLives();
     }
   }
 }
-// sphere moves to next tile upon click
-function updateSphere() {
-  let prevX = sphere.tileX;
-  let prevY = sphere.tileY;
+// rabbit moves to next tile upon click
+function updateRabbit() {
+  let prevX = globalRabbit.tileX;
+  let prevY = globalRabbit.tileY;
 
-  if (keyState == "ArrowLeft") sphere.tileX += 1;
-  if (keyState == "ArrowRight") sphere.tileX += -1;
-  if (keyState == "ArrowUp") sphere.tileY += 1;
-  if (keyState == "ArrowDown") sphere.tileY += -1;
-  let tilePosition = XYtoPositionDict.get(XYto1D(sphere.tileX, sphere.tileY));
+  if (keyState == "ArrowLeft") globalRabbit.tileX += 1;
+  if (keyState == "ArrowRight") globalRabbit.tileX += -1;
+  if (keyState == "ArrowUp") globalRabbit.tileY += 1;
+  if (keyState == "ArrowDown") globalRabbit.tileY += -1;
+  let tilePosition = XYtoPositionDict.get(XYto1D(globalRabbit.tileX, globalRabbit.tileY));
 
   if (tilePosition == undefined) {
-    sphere.tileX = prevX;
-    sphere.tileY = prevY;
+    globalRabbit.tileX = prevX;
+    globalRabbit.tileY = prevY;
     return;
   }
 
   let translationVec = positionToHexDict.get(tilePosition)[1];
-  let currPosition = sphere.position;
-  //animateSphereMovement(sphere, currPosition, translationVec);
+  let currPosition = globalRabbit.position;
+  //animateSphereMovement(rabbit, currPosition, translationVec);
   
-  sphere.position.x = translationVec.x;
-  sphere.position.y = translationVec.y + radius;
-  sphere.position.z = translationVec.z; 
+  globalRabbit.position.x = translationVec.x;
+  globalRabbit.position.y = translationVec.y; // + radisu;
+  globalRabbit.position.z = translationVec.z; 
 
-  updateBabySpheres();
+  updateBabyRabbits();
   updateHunterZones();
   updateBearTraps();
 
 }
-// Baby Spheres disappear upon contact with sphere
-function updateBabySpheres() {
-  for (let babySphere of babySpheres) {
-    if ((babySphere.tileX == sphere.tileX) && (babySphere.tileY == sphere.tileY)) {
-      scene.remove(babySphere);
+// Baby rabbits disappear upon contact with rabbit
+function updateBabyRabbits() {
+  for (let babyRabbit of babyRabbits) {
+    if ((babyRabbit.tileX == globalRabbit.tileX) && (babyRabbit.tileY == globalRabbit.tileY)) {
+      scene.remove(babyRabbit);
     }
   }
 }
-// if sphere/rabbit enters hunter zone, there is a probability p chance that the rabbit loses a life
+// if rabbit enters hunter zone, there is a probability p chance that the rabbit loses a life
 function updateHunterZones() {
   for (let hunterZone of hunterZones) {
-    if (sphere.position.distanceTo(hunterZone.position) < 4 * radius) {
+    if (globalRabbit.position.distanceTo(hunterZone.position) < 4 * radius) {
       let p = Math.random();
       if (p < 0.3) {
         updateLives();
@@ -441,10 +480,10 @@ function updateLives() {
     document.getElementById('Number of Lives').innerHTML = heartString;
   }
 }
-// bear traps spin up out of the ground upon contact with sphere
+// bear traps spin up out of the ground upon contact with rabbit
 function updateBearTraps() {
   for (let bearTrap of bearTraps) {
-    if ((bearTrap.tileX == sphere.tileX) && (bearTrap.tileY == sphere.tileY)) {
+    if ((bearTrap.tileX == globalRabbit.tileX) && (bearTrap.tileY == globalRabbit.tileY)) {
       bearTrap.translateY(10);
     }
   }
