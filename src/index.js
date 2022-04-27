@@ -3,8 +3,8 @@ import {
   WebGLRenderer, ACESFilmicToneMapping, sRGBEncoding, Color, CylinderGeometry,
   RepeatWrapping, DoubleSide, BoxGeometry, Mesh, PointLight, MeshPhysicalMaterial,
   PerspectiveCamera, Scene, PMREMGenerator, PCFSoftShadowMap, Vector2, Vector3, TextureLoader,
-  SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, FloatType, VSMShadowMap, ConeGeometry, 
-  
+  SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, FloatType, VSMShadowMap, ConeGeometry,
+  AmbientLight
 } from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
 import { FBXLoader } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/loaders/FBXLoader';
 import { OrbitControls } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/controls/OrbitControls';
@@ -13,61 +13,79 @@ import { mergeBufferGeometries } from 'https://cdn.skypack.dev/three-stdlib@2.8.
 import SimplexNoise from 'https://cdn.skypack.dev/simplex-noise';
 //import { TWEEN } from 'three/examples/jsm/libs/tween.module.min.js';
 
-// Initialize Scene
-const scene = new Scene();
-scene.background = new Color("#FFEECC");
+// Instantiate Relevant Items
+let scene, camera, controls, renderer;
+let envmap, pmrem;
+let light, ambientLight;
 
-// Initialize Camera
-const camera = new PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1000);
-camera.position.set(-17, 35, 31);
-
-// Initialize Renderer
-const renderer = new WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-
-// ACES Filmic Tone Mapping maps high dynamic range (HDR) lighting conditions
-// to low dynamic range (LDR) digital screen representations.
-renderer.toneMapping = ACESFilmicToneMapping;
-renderer.outputEncoding = sRGBEncoding;
-renderer.physicallyCorrectLights = true;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = PCFSoftShadowMap;
-document.body.appendChild(renderer.domElement);
-
-// set up lights
-const light = new PointLight( new Color("#fee2d2").convertSRGBToLinear().convertSRGBToLinear(), 80, 200 );
-light.position.set(10, 20, 10);
-
-light.castShadow = true;
-light.shadow.mapSize.width = 512;
-light.shadow.mapSize.height = 512;
-light.shadow.camera.near = 0.5;
-light.shadow.camera.far = 500;
-scene.add( light );
-
-// Set up Camera Manipulation
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0, 0);
-controls.dampingFactor = 0.05;
-controls.enableDamping = true;
-controls.enableZoom = true;
-
-let pmrem = new PMREMGenerator(renderer);
-pmrem.compileEquirectangularShader();
-
-// instantiates envmap
-let envmap;
-
+// Define World Settings
 // we can control max height to make things more flat or not.
 const MAX_HEIGHT = 10;
 
 // map dimensions
-const LENGTH = 20; 
-const MAX_DISTANCE_THRESHOLD = Math.floor(0.8*LENGTH);
+const LENGTH = 40;
+const MAX_DISTANCE_THRESHOLD = Math.floor(0.8 * LENGTH);
 const BABYRABBITS_NUM = 3;
 const WOLVES_NUM = 1;
 const BEARTRAPS_NUM = 2;
 const HUNTERS_NUM = 1;
+
+function initScene() {
+  // Initialize Camera
+  camera = new PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1000);
+  camera.position.set(-17, 35, 31);
+
+  // Initialize Scene
+  scene = new Scene();
+  scene.background = new Color("#FFEECC");
+
+  // Initialize Renderer
+  renderer = new WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+
+  // ACES Filmic Tone Mapping maps high dynamic range (HDR) lighting conditions
+  // to low dynamic range (LDR) digital screen representations.
+  renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.outputEncoding = sRGBEncoding;
+  renderer.physicallyCorrectLights = true;
+  renderer.shadowMap.enabled = true;
+
+  // we have several options for shadow mapping, but after testing, this does
+  // seem to be the best we have. Although we could try VSMShadowMap or
+  // PCFShadowMap for performance reasons.
+  renderer.shadowMap.type = PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+
+  // Set up Camera Manipulation
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0, 0);
+  controls.dampingFactor = 0.05;
+  controls.enableDamping = true;
+  controls.enableZoom = true;
+}
+
+function initLights() {
+  // set up lights, color should be mostly white. Even a small bit other imbalance
+  // is shown pretty obviously.
+  light = new PointLight( new Color("#fee2d2").convertSRGBToLinear().convertSRGBToLinear(), 60, 200 );
+  light.position.set(10, 20, 10);
+
+  light.castShadow = true;
+  light.shadow.mapSize.width = 512;
+  light.shadow.mapSize.height = 512;
+  light.shadow.camera.near = 0.5;
+  light.shadow.camera.far = 500;
+  scene.add(light);
+
+  // add ambient lighting to soften things out
+  ambientLight = new AmbientLight( new Color("#fee2d2").convertSRGBToLinear().convertSRGBToLinear(), 0.5);
+  ambientLight.position.set(-5, 10, -15);
+  scene.add(ambientLight);
+}
+
+initScene();
+initLights();
+buildAnimate();
 
 // dictionary that maps the tilePosition to the hex
 let positionToHexDict = new Map();
@@ -87,9 +105,8 @@ let bearTraps = [];
 let wolves = [];
 
 
-/* code taken below is from: 
+/* code taken below is from:
 https://www.reddit.com/r/learnjavascript/comments/9jovpn/how_can_i_load_a_3d_model_asynchronously_in/ */
-
 async function configureMaterials(child){
   if(child instanceof Mesh){
       //load in the texture and "wait" until the texture's loaded - assuming the TextureLoader works like the FBXLoader
@@ -99,12 +116,22 @@ async function configureMaterials(child){
       child.material.needsUpdate = true;
   }
 }
+
 //helper function to load-in the dummy model
 function loadDummyRabbit(resolve, reject){
   const fbxLoader = new FBXLoader();
   const dummyPath = "assets/rabbit.FBX";
   fbxLoader.load(dummyPath, (dummy) => resolve(dummy));
 }
+
+// general FBX loader
+function loadAsset(path) {
+  return new Promise((resolve, reject) => {
+    const fbxLoader = new FBXLoader();
+    fbxLoader.load(path, (asset) => resolve(asset));
+  })
+}
+
 /*
 //helper function to load-in the dummy model
 function loadDummyWolf(resolve, reject){
@@ -122,13 +149,15 @@ function loadDummyWolf(resolve, reject){
 
 // also note that, within the async function, order still matters when it comes
 // to instantiating/declaring things in the right order.
-(async function() {
+async function buildAnimate() {
   // environment map set up. await in this case means that the command here will
   // wait for RGBE Loader to finish processing the HDR file before continuing.
+  let pmrem = new PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+
   let envmapTexture = await new RGBELoader().loadAsync("assets/envmap.hdr");
   let rt = pmrem.fromEquirectangular(envmapTexture);
   envmap = rt.texture;
-
 
   //load in the dummy fbx model here, "wait" until it's done
   const rabbit = await new Promise(loadDummyRabbit);
@@ -164,7 +193,7 @@ function loadDummyWolf(resolve, reject){
       noise = Math.pow(noise, 1.5);
 
       hex(noise * MAX_HEIGHT, position, envmap);
-      
+
     }
   }
 
@@ -185,7 +214,7 @@ function loadDummyWolf(resolve, reject){
   // defines and adds the mesh for water surface
   // can consider using water.js from three.js examples here
   let seaMesh = new Mesh(
-    new CylinderGeometry(17, 17, MAX_HEIGHT * 0.2, 50),
+    new CylinderGeometry(34, 34, MAX_HEIGHT * 0.2, 50),
     new MeshPhysicalMaterial({
       envMap: envmap,
       color: new Color("#55aaff").convertSRGBToLinear().multiplyScalar(3),
@@ -206,6 +235,7 @@ function loadDummyWolf(resolve, reject){
   scene.add(seaMesh);
 
   // defines and adds the cylinder containing the map
+  /*
   let mapContainer = new Mesh(
     new CylinderGeometry(17.1, 17.1, MAX_HEIGHT * 0.25, 50, 1, true),
     new MeshPhysicalMaterial({
@@ -219,10 +249,11 @@ function loadDummyWolf(resolve, reject){
   mapContainer.rotation.y = -Math.PI * 0.333 * 0.5;
   mapContainer.position.set(0, MAX_HEIGHT * 0.125, 0);
   scene.add(mapContainer);
+  */
 
   // defines and adds the map floor
   let mapFloor = new Mesh(
-    new CylinderGeometry(18.5, 18.5, MAX_HEIGHT * 0.1, 50),
+    new CylinderGeometry(37, 37, MAX_HEIGHT * 0.1, 50),
     new MeshPhysicalMaterial({
       envMap: envmap,
       map: textures.dirt2,
@@ -234,24 +265,21 @@ function loadDummyWolf(resolve, reject){
   mapFloor.position.set(0, -MAX_HEIGHT * 0.05, 0);
   scene.add(mapFloor);
 
-  /*
-  // make a new Spherical object
-  const geometry = new SphereGeometry( radius, 32, 16 );
-  const material = new MeshBasicMaterial( { color: 0xffff00 } );
-  sphere = new Mesh( geometry, material ); 
-
-  sphere = rabbit; */
   globalRabbit = rabbit;
-    // translate rabbit 
+
+  // translate rabbit
   let tilePosition = XYtoPositionDict.get(XYto1D(0, 0));
   let translationVec = positionToHexDict.get(tilePosition)[1];
   rabbit.translateX(translationVec.x);
-  rabbit.translateY(translationVec.y + radius);
+  rabbit.translateY(translationVec.y);
   rabbit.translateZ(translationVec.z);
   rabbit.tileX = 0;
   rabbit.tileY = 0;
 
   scene.add(rabbit);
+
+  // this centers the camera controls on the rabbit
+  controls.target = rabbit.position;
 
   // add event listener for rabbit
   document.addEventListener("keydown", function (event) {
@@ -275,7 +303,7 @@ function loadDummyWolf(resolve, reject){
     //updateWolves();
     //updateSphere(sphere);
   });
-})();
+}
 
 // creates baby rabbits in the form of white spheres of half the radius, and adds them to the scene
 function generateBabyRabbits() {
@@ -302,6 +330,7 @@ function generateBabyRabbits() {
     }
   }
 }
+
 // creates hunters in the form of blue rectangular boxes, and adds them to the scene
 function generateHunters() {
   for (let i = 0; i < HUNTERS_NUM; i++) {
@@ -340,6 +369,7 @@ function generateHunters() {
     }
   }
 }
+
 // creates bear traps in the form of yellow cones, and adds them to the scene
 function generateBearTraps() {
   for (let i = 0; i < BEARTRAPS_NUM; i++) {
@@ -366,10 +396,11 @@ function generateBearTraps() {
     }
   }
 }
+
 // creates wolves in the form of yellow black spheres, and adds them to the scene
 function generateWolves() {
   for (let i = 0; i < WOLVES_NUM; i++) {
-    let geometry = new SphereGeometry( radius/2, 32, 16 ); 
+    let geometry = new SphereGeometry( radius/2, 32, 16 );
     let material = new MeshBasicMaterial( {color: 0x000000} );
     let wolf = new Mesh( geometry, material );
 
@@ -392,6 +423,7 @@ function generateWolves() {
     }
   }
 }
+
 // wolves move randomly to a neighboring tile
 function updateWolves() {
   //delta = clock.getDelta();
@@ -423,6 +455,7 @@ function updateWolves() {
     }
   }
 }
+
 // rabbit moves to next tile upon click
 function updateRabbit() {
   let prevX = globalRabbit.tileX;
@@ -443,16 +476,17 @@ function updateRabbit() {
   let translationVec = positionToHexDict.get(tilePosition)[1];
   let currPosition = globalRabbit.position;
   //animateSphereMovement(rabbit, currPosition, translationVec);
-  
+
   globalRabbit.position.x = translationVec.x;
   globalRabbit.position.y = translationVec.y; // + radisu;
-  globalRabbit.position.z = translationVec.z; 
+  globalRabbit.position.z = translationVec.z;
 
   updateBabyRabbits();
   updateHunterZones();
   updateBearTraps();
 
 }
+
 // Baby rabbits disappear upon contact with rabbit
 function updateBabyRabbits() {
   for (let babyRabbit of babyRabbits) {
@@ -461,6 +495,7 @@ function updateBabyRabbits() {
     }
   }
 }
+
 // if rabbit enters hunter zone, there is a probability p chance that the rabbit loses a life
 function updateHunterZones() {
   for (let hunterZone of hunterZones) {
@@ -472,6 +507,8 @@ function updateHunterZones() {
     }
   }
 }
+
+// updates rabbit lives
 function updateLives() {
   if (lives != 0) {
     lives--;
@@ -480,6 +517,7 @@ function updateLives() {
     document.getElementById('Number of Lives').innerHTML = heartString;
   }
 }
+
 // bear traps spin up out of the ground upon contact with rabbit
 function updateBearTraps() {
   for (let bearTrap of bearTraps) {
@@ -488,6 +526,7 @@ function updateBearTraps() {
     }
   }
 }
+
 // converts x,y coordinate to 1D (dumb implementation)
 function XYto1D(x, y) {
   return 1000* x + y;
@@ -531,20 +570,154 @@ function hex(height, position) {
   positionToHexDict.set(position, [geo, new Vector3(position.x, height, position.y)]);
   if(height > STONE_HEIGHT) {
     stoneGeo = mergeBufferGeometries([geo, stoneGeo]);
+
+    // load in a terrain asset
+    let randomValue = Math.random();
+    if(randomValue > 0.80) {
+      loadAsset('assets/PP_Rock_Moss_Grown_09.fbx').then((tree) => {
+        tree.traverse(configureMaterials);
+        tree.scale.multiplyScalar(0.004);
+
+        let translationVec = positionToHexDict.get(position)[1];
+        tree.translateX(translationVec.x);
+        tree.translateY(translationVec.y);
+        tree.translateZ(translationVec.z);
+
+        scene.add(tree);
+      })
+    }
   } else if(height > DIRT_HEIGHT) {
     dirtGeo = mergeBufferGeometries([geo, dirtGeo]);
 
-    if(Math.random() > 0.8) {
-      // if we were to add other geometries procedurally to tiles, we would do
-      // it like so. We would merge it to the aggregate geometry with the appropriate
-      // texture. Everything is added to the scene only after everything is divided
-      // appropriately by the textures they use.
-      // grassGeo = mergeBufferGeometries([grassGeo, tree(height, position)]);
+    // load in a terrain asset
+    let randomValue = Math.random();
+    if(randomValue > 0.90) {
+      loadAsset('assets/PP_Mushroom_Fantasy_Purple_08.fbx').then((tree) => {
+        tree.traverse(configureMaterials);
+        tree.scale.multiplyScalar(0.08);
+
+        let translationVec = positionToHexDict.get(position)[1];
+        tree.translateX(translationVec.x);
+        tree.translateY(translationVec.y);
+        tree.translateZ(translationVec.z);
+
+        scene.add(tree);
+      })
+    } else if(randomValue > 0.80) {
+      loadAsset('assets/PP_Mushroom_Fantasy_Orange_09.fbx').then((tree) => {
+        tree.traverse(configureMaterials);
+        tree.scale.multiplyScalar(0.04);
+
+        let translationVec = positionToHexDict.get(position)[1];
+        tree.translateX(translationVec.x);
+        tree.translateY(translationVec.y);
+        tree.translateZ(translationVec.z);
+
+        scene.add(tree);
+      })
     }
   } else if(height > GRASS_HEIGHT) {
     grassGeo = mergeBufferGeometries([geo, grassGeo]);
+
+    // if we were to add other geometries procedurally to tiles, we would do
+    // it like so. We would merge it to the aggregate geometry with the appropriate
+    // texture. Everything is added to the scene only after everything is divided
+    // appropriately by the textures they use.
+    // grassGeo = mergeBufferGeometries([grassGeo, tree(height, position)]);
+
+    // load in a terrain asset
+    let randomValue = Math.random();
+    if(randomValue > 0.97) {
+      loadAsset('assets/PP_Birch_Tree_05.fbx').then((tree) => {
+        tree.traverse(configureMaterials);
+        tree.scale.multiplyScalar(0.015);
+
+        let translationVec = positionToHexDict.get(position)[1];
+        tree.translateX(translationVec.x);
+        tree.translateY(translationVec.y);
+        tree.translateZ(translationVec.z);
+
+        scene.add(tree);
+      })
+    } else if(randomValue > 0.94) {
+      loadAsset('assets/PP_Tree_02.fbx').then((tree) => {
+        tree.traverse(configureMaterials);
+        tree.scale.multiplyScalar(0.015);
+
+        let translationVec = positionToHexDict.get(position)[1];
+        tree.translateX(translationVec.x);
+        tree.translateY(translationVec.y);
+        tree.translateZ(translationVec.z);
+
+        scene.add(tree);
+      })
+    } else if(randomValue > 0.92) {
+      loadAsset('assets/PP_Hyacinth_04.fbx').then((tree) => {
+        tree.traverse(configureMaterials);
+        tree.scale.multiplyScalar(0.05);
+
+        let translationVec = positionToHexDict.get(position)[1];
+        tree.translateX(translationVec.x);
+        tree.translateY(translationVec.y);
+        tree.translateZ(translationVec.z);
+
+        scene.add(tree);
+      })
+    } else if(randomValue > 0.82) {
+      loadAsset('assets/PP_Grass_11.fbx').then((tree) => {
+        tree.traverse(configureMaterials);
+        tree.scale.multiplyScalar(0.05);
+
+        let translationVec = positionToHexDict.get(position)[1];
+        tree.translateX(translationVec.x);
+        tree.translateY(translationVec.y);
+        tree.translateZ(translationVec.z);
+
+        scene.add(tree);
+      })
+    } else if(randomValue > 0.81) {
+      loadAsset('assets/PP_Rock_Pile_Forest_Moss_05.fbx').then((tree) => {
+        tree.traverse(configureMaterials);
+        tree.scale.multiplyScalar(0.004);
+
+        let translationVec = positionToHexDict.get(position)[1];
+        tree.translateX(translationVec.x);
+        tree.translateY(translationVec.y);
+        tree.translateZ(translationVec.z);
+
+        scene.add(tree);
+      })
+    } else if(randomValue > 0.71) {
+      loadAsset('assets/PP_Grass_15.fbx').then((tree) => {
+        tree.traverse(configureMaterials);
+        tree.scale.multiplyScalar(0.05);
+
+        let translationVec = positionToHexDict.get(position)[1];
+        tree.translateX(translationVec.x);
+        tree.translateY(translationVec.y);
+        tree.translateZ(translationVec.z);
+
+        scene.add(tree);
+      })
+    }
   } else if(height > SAND_HEIGHT) {
     sandGeo = mergeBufferGeometries([geo, sandGeo]);
+
+    // load in a terrain asset
+    let randomValue = Math.random();
+    if(randomValue > 0.90) {
+      loadAsset('assets/PP_Rock_Moss_Grown_11.fbx').then((tree) => {
+        tree.traverse(configureMaterials);
+        tree.scale.multiplyScalar(0.004);
+
+        let translationVec = positionToHexDict.get(position)[1];
+        tree.translateX(translationVec.x);
+        tree.translateY(translationVec.y);
+        tree.translateZ(translationVec.z);
+
+        scene.add(tree);
+      })
+    }
   } else if(height > DIRT2_HEIGHT) {
     dirt2Geo = mergeBufferGeometries([geo, dirt2Geo]);
   }
