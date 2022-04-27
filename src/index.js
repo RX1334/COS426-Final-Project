@@ -23,12 +23,12 @@ let light, ambientLight;
 const MAX_HEIGHT = 10;
 
 // map dimensions
-const LENGTH = 20;
+const LENGTH = 40;
 const MAX_DISTANCE_THRESHOLD = Math.floor(0.8 * LENGTH);
 const BABYRABBITS_NUM = 3;
-const WOLVES_NUM = 1;
+const WOLVES_NUM = 10;
 const BEARTRAPS_NUM = 2;
-const HUNTERS_NUM = 1;
+const HUNTERS_NUM = 0;
 
 function initScene() {
   // Initialize Camera
@@ -318,8 +318,9 @@ async function buildAnimate() {
   // add bear traps to the scene
   generateBearTraps();
   generateWolves();
+
   // move wolves every second
-  window.setInterval(updateWolves, 2000);
+  window.setInterval(updateWolves, 1000);
 
   renderer.setAnimationLoop(() => {
     //controls.update();
@@ -337,21 +338,13 @@ function onPointerMove( event ) {
 }
 
 function render() {
-  //console.log(pointer);
 	// update the picking ray with the camera and pointer position
 	raycaster.setFromCamera( pointer, camera );
-  
-  console.log("CAMERA POSITION: ")
-  console.log(camera.position);
-  console.log("RABBIT POSITION: ")
-  console.log(globalRabbit.position);
-
-  
+    
 	// calculate objects intersecting the picking ray
 	const intersects = raycaster.intersectObjects( scene.children );
   if (intersects.length == 0) return;
 
-  console.log(intersects[0].point);
   let intersectionPointCoord = intersects[0].point;
   let tileX = Math.round(intersectionPointCoord.x);
   let tileY = Math.round(intersectionPointCoord.z);
@@ -367,41 +360,7 @@ function render() {
   globalRabbit.tileX = tileX;
   globalRabbit.tileY = tileY;
 
-
-
-  /*
-  intersects[0].object.material.color.set( 0xff0000 );
-  
-  
-  	for ( let i = 0; i < intersects.length; i ++ ) {
-		intersects[ i ].object.material.color.set( 0xff0000 );
-    console.log(intersects[i].point);
-	}
-  */
-	//renderer.render( scene, camera ); 
 }
-/*
-function updateRabbit2(event) {
-  mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
-  mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
-
-	// update the picking ray with the camera and pointer position
-	raycaster.setFromCamera( mouse, camera );
-
-  // calculate objects intersecting the picking ray
-	const intersects = raycaster.intersectObjects( scene.children );
-
-	for ( let i = 0; i < intersects.length; i ++ ) {
-
-		intersects[ i ].object.material.color.set( 0xff0000 );
-    renderer.render( scene, camera );
-	}
-
-
-  console.log(mouse.x);
-  console.log(mouse.y);
-  console.log(globalRabbit.position);
-}*/
 // creates baby rabbits in the form of white spheres of half the radius, and adds them to the scene
 function generateBabyRabbits() {
   for (let i = 0; i < BABYRABBITS_NUM; i++) {
@@ -520,51 +479,102 @@ function generateWolves() {
     }
   }
 }
+function getAllAdjacentTiles(tileX, tileY) {
+  let possibleTiles = [];
+  
+  let tilePosition;
+
+  tilePosition = XYtoPositionDict.get(XYto1D(tileX+1, tileY));
+  if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX+1, tileY));
+
+  tilePosition = XYtoPositionDict.get(XYto1D(tileX-1, tileY));
+  if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX-1, tileY));
+
+  // if y tile is even
+  if (mod(tileY, 2) == 1) {
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX+1, tileY+1));
+    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX+1, tileY+1));
+
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY+1));
+    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX, tileY+1));
+    
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY-1));
+    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX, tileY-1));
+    
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX+1, tileY-1));
+    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX+1, tileY-1));
+  }
+  else if (mod(tileY, 2) == 0) {
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY+1));
+    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX, tileY+1));
+
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX-1, tileY+1));
+    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX-1, tileY+1));
+    
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX-1, tileY-1));
+    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX-1, tileY-1));
+    
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY-1));
+    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX, tileY-1));
+  }
+  return possibleTiles;
+}
+
+function getClosestAdjacentTileToRabbit(allAdjacent, tileX, tileY) {
+  let minDistance = Infinity;
+  let closestTile;
+
+  for (let tile1D of allAdjacent) {
+    let tile = XYtoPositionDict.get(oneDtoXY(tile1D));
+    let rabbitPosition = XYtoPositionDict.get(XYto1D(globalRabbit.tileX, globalRabbit.tileY));
+    if (tile.distanceTo(rabbitPosition) < minDistance) {
+      closestTile = tile1D;
+      minDistance = tile.distanceTo(rabbitPosition);
+    }
+  }
+  return closestTile;
+}
 
 // wolves move randomly to a neighboring tile
 function updateWolves() {
   //delta = clock.getDelta();
   for (let wolf of wolves) {
-    // keep loooking for tiles for where the wolf can move to randomly
-    while (true) {
-      let x = Math.random();
-      let y = Math.random();
-      let dirX = 0;
-      let dirY = 0;
-      if (x < 1/3) dirX += 1;
-      else if (x < 2/3) dirX += -1;
-      if (y < 1/3) dirY += 1;
-      else if (y < 2/3) dirY += -1;
+    let allAdjacent = getAllAdjacentTiles(wolf.tileX, wolf.tileY);
+    let closestAdjacentTile = getClosestAdjacentTileToRabbit(allAdjacent, wolf.tileX, wolf.tileY);
+    
+    if (XYtoPositionDict.get(oneDtoXY(closestAdjacentTile)) == undefined) continue;
+    
+    let translationVec = positionToHexDict.get(XYtoPositionDict.get(oneDtoXY(closestAdjacentTile)))[1];
 
-      let tilePosition = XYtoPositionDict.get(XYto1D(wolf.tileX + dirX, wolf.tileY + dirY));
-      if (tilePosition == undefined) continue;
-      let translationVec = positionToHexDict.get(tilePosition)[1];
-      wolf.position.x = translationVec.x;
-      wolf.position.y = translationVec.y + radius/2;
-      wolf.position.z = translationVec.z;
-      wolf.tileX += dirX;
-      wolf.tileY += dirY;
-      break;
-    }
+    wolf.position.x = translationVec.x;
+    wolf.position.y = translationVec.y + radius/2;
+    wolf.position.z = translationVec.z;
+
+    wolf.tileX, wolf.tileY = oneDtoXY(closestAdjacentTile);
+
     if ((globalRabbit.position.x == wolf.position.x) && (globalRabbit.position.z == wolf.position.z)) {
-      //console.log("CONTACT WAS MADE WITH WOLF");
       updateLives();
     }
   }
 }
+
 function updateRabbitPerspective() {
   let prevX = globalRabbit.tileX;
   let prevY = globalRabbit.tileY;
   if (keyState == "ArrowLeft") {
     //camera.rotateY(1.047);
     globalRabbit.rotateY(Math.PI/3);
-    globalRabbit.angleMetric = (globalRabbit.angleMetric + 60) % 360;
+    globalRabbit.angleMetric = mod(globalRabbit.angleMetric + 60, 360);
   }
   if (keyState == "ArrowRight") {
     //camera.rotateY(-1.047);
     globalRabbit.rotateY(-Math.PI/3);
-    globalRabbit.angleMetric = (globalRabbit.angleMetric - 60) % 360;
+    globalRabbit.angleMetric = mod(globalRabbit.angleMetric - 60, 360);
   }
+}
+
+function mod(n, m) {
+  return ((n % m) + m) % m;
 }
 
 function moveRabbitUponSpacebar() {
@@ -572,70 +582,57 @@ function moveRabbitUponSpacebar() {
   let prevY = globalRabbit.tileY;
 
   if (keyState != " ") return;
-  console.log("ANGLE");
-  console.log(globalRabbit.angleMetric);
 
-
-  if (globalRabbit.angleMetric == 0) {
+  if (mod(globalRabbit.angleMetric, 360) == 0) {
     globalRabbit.tileX += 1;
   }
-  if ((globalRabbit.angleMetric + 60) % 360 == 0) {
-    globalRabbit.tileX += 1;
-    globalRabbit.tileY += 1;
-  }
-  if ((globalRabbit.angleMetric + 120) % 360 == 0) {
-    globalRabbit.tileY += 1;
-  }
-
-  if ((globalRabbit.angleMetric + 180) % 360 == 0) {
+  else if (mod(globalRabbit.angleMetric + 180, 360) == 0) {
     globalRabbit.tileX -= 1;
+  } 
+  // if y tile is even
+  else if (mod(prevY, 2) == 1) {
+    if (mod(globalRabbit.angleMetric + 60, 360)== 0) {
+      globalRabbit.tileX += 1;
+      globalRabbit.tileY += 1;
+    }
+    if (mod(globalRabbit.angleMetric + 120, 360) == 0) {
+      globalRabbit.tileY += 1;
+    }
+    if (mod(globalRabbit.angleMetric + 240, 360) == 0) {
+      globalRabbit.tileY -= 1;
+    }
+    if (mod(globalRabbit.angleMetric + 300, 360) == 0) {
+      globalRabbit.tileX += 1;
+      globalRabbit.tileY -= 1;
+    }
   }
-  if ((globalRabbit.angleMetric + 240) % 360 == 0) {
-    globalRabbit.tileY -= 1;
+  else if (mod(prevY, 2) == 0) {
+    if (mod(globalRabbit.angleMetric + 60, 360) == 0) {
+      globalRabbit.tileX += 0;
+      globalRabbit.tileY += 1;
+    }
+    if (mod(globalRabbit.angleMetric + 120, 360) == 0) {
+      globalRabbit.tileX += -1;
+      globalRabbit.tileY += 1;
+    }
+    if (mod(globalRabbit.angleMetric + 240, 360)== 0) {
+      globalRabbit.tileX += -1;
+      globalRabbit.tileY += -1;    
+    }
+    if (mod(globalRabbit.angleMetric + 300, 360) == 0) {
+      globalRabbit.tileX += 0;
+      globalRabbit.tileY += -1;
+    }
   }
-  if ((globalRabbit.angleMetric + 300) % 360 == 0) {
-    globalRabbit.tileX += 1;
-    globalRabbit.tileY -= 1;
-  }
-
-
-  
-  /*
-  if (globalRabbit.angleMetric == 0) {
-    globalRabbit.tileX += 1;
-  }
-  if ((globalRabbit.angleMetric - 60) % 360 == 0) {
-    globalRabbit.tileX += 1;
-    globalRabbit.tileY += 1;
-  }
-  if ((globalRabbit.angleMetric - 120 % 360) == 0) {
-    globalRabbit.tileY += 1;
-  }
-  if ((globalRabbit.angleMetric - 180 % 360) == 0) {
-    globalRabbit.tileX -= 1;
-  }
-  if ((globalRabbit.angleMetric - 240) % 360 == 0) {
-    globalRabbit.tileY -= 1;
-  }
-  if ((globalRabbit.angleMetric - 300) % 360 == 0) {
-    globalRabbit.tileX += 1;
-    globalRabbit.tileY -= 1;
-  }*/
-
   let tilePosition = XYtoPositionDict.get(XYto1D(globalRabbit.tileX, globalRabbit.tileY));
 
   if (tilePosition == undefined) {
     globalRabbit.tileX = prevX;
     globalRabbit.tileY = prevY;
-    console.log("TILE POSITION IS INVALID");
     return;
   }
-  console.log(globalRabbit.tileX);
-  console.log(globalRabbit.tileY);
 
   let translationVec = positionToHexDict.get(tilePosition)[1];
-  //let currPosition = globalRabbit.position;
-  //animateSphereMovement(rabbit, currPosition, translationVec);
 
   globalRabbit.position.x = translationVec.x;
   globalRabbit.position.y = translationVec.y; // + radisu;
@@ -721,6 +718,12 @@ function updateBearTraps() {
 function XYto1D(x, y) {
   return 10000* x + y;
 }
+
+// converts 1D coordinate to tileX, tileY (dumb implementation)
+function oneDtoXY(key) {
+  return key / 10000, key % 10000;
+}
+
 
 // converts index numbers for X and Y into proper coordinates for hexagons
 // actually adds the hexagons edge to edge, meaning the hexagons wiggle around
