@@ -4,7 +4,7 @@ import {
   RepeatWrapping, DoubleSide, BoxGeometry, Mesh, PointLight, MeshPhysicalMaterial,
   PerspectiveCamera, Scene, PMREMGenerator, PCFSoftShadowMap, Vector2, Vector3, TextureLoader,
   SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, FloatType, VSMShadowMap, ConeGeometry,
-  AmbientLight
+  AmbientLight, Raycaster
 } from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
 import { FBXLoader } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/loaders/FBXLoader';
 import { OrbitControls } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/controls/OrbitControls';
@@ -23,7 +23,7 @@ let light, ambientLight;
 const MAX_HEIGHT = 10;
 
 // map dimensions
-const LENGTH = 40;
+const LENGTH = 20;
 const MAX_DISTANCE_THRESHOLD = Math.floor(0.8 * LENGTH);
 const BABYRABBITS_NUM = 3;
 const WOLVES_NUM = 1;
@@ -103,6 +103,10 @@ let hunterZones = [];
 let lives = 10;
 let bearTraps = [];
 let wolves = [];
+let pointer = new Vector2(0, 0);
+const raycaster = new Raycaster();
+
+
 
 
 /* code taken below is from:
@@ -164,7 +168,7 @@ async function buildAnimate() {
   //do your material setup here like normal
   rabbit.traverse(configureMaterials);
   //assuming your scene doesn't need to wait for the textures, add it straight way
-  rabbit.scale.multiplyScalar(0.07);
+  rabbit.scale.multiplyScalar(0.07); // use 0.07
 
   // load in textures for different hex types. Using minecraft texture packs
   // is actually a very good idea for skinning the tiles.
@@ -214,7 +218,7 @@ async function buildAnimate() {
   // defines and adds the mesh for water surface
   // can consider using water.js from three.js examples here
   let seaMesh = new Mesh(
-    new CylinderGeometry(34, 34, MAX_HEIGHT * 0.2, 50),
+    new CylinderGeometry(0.85*LENGTH, 0.85 * LENGTH, MAX_HEIGHT * 0.2, 50),
     new MeshPhysicalMaterial({
       envMap: envmap,
       color: new Color("#55aaff").convertSRGBToLinear().multiplyScalar(3),
@@ -253,7 +257,7 @@ async function buildAnimate() {
 
   // defines and adds the map floor
   let mapFloor = new Mesh(
-    new CylinderGeometry(37, 37, MAX_HEIGHT * 0.1, 50),
+    new CylinderGeometry(0.9 * LENGTH, 0.9*LENGTH, MAX_HEIGHT * 0.1, 50),
     new MeshPhysicalMaterial({
       envMap: envmap,
       map: textures.dirt2,
@@ -266,6 +270,9 @@ async function buildAnimate() {
   scene.add(mapFloor);
 
   globalRabbit = rabbit;
+  globalRabbit.angleMetric = 60;
+  globalRabbit.rotateY(Math.PI/6);
+  globalRabbit.rotateY(2*Math.PI/3);
 
   // translate rabbit
   let tilePosition = XYtoPositionDict.get(XYto1D(0, 0));
@@ -279,13 +286,30 @@ async function buildAnimate() {
   scene.add(rabbit);
 
   // this centers the camera controls on the rabbit
-  controls.target = rabbit.position;
+  //controls.target = rabbit.position;
+
 
   // add event listener for rabbit
   document.addEventListener("keydown", function (event) {
     keyState = event.key;
-    updateRabbit();
+    updateRabbitPerspective();
   });
+
+  
+  
+  // add event listener for rabbit
+  document.addEventListener("keydown", function (event) {
+    keyState = event.key;
+    moveRabbitUponSpacebar();
+  });
+
+  /*
+  // add event listener for rabbit for mouse click
+  document.addEventListener( 'click', function (event) {
+    updateRabbit2(event);
+  }); */
+  //window.addEventListener( 'click', onPointerMove );
+  //window.requestAnimationFrame(render);
 
   // add baby rabbits (for now, spheres with smaller radii)
   generateBabyRabbits();
@@ -298,13 +322,86 @@ async function buildAnimate() {
   window.setInterval(updateWolves, 2000);
 
   renderer.setAnimationLoop(() => {
-    controls.update();
+    //controls.update();
     renderer.render(scene, camera);
     //updateWolves();
     //updateSphere(sphere);
   });
 }
+function onPointerMove( event ) {
+	// calculate pointer position in normalized device coordinates
+	// (-1 to +1) for both components
+	pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+	pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+  render();
+}
 
+function render() {
+  //console.log(pointer);
+	// update the picking ray with the camera and pointer position
+	raycaster.setFromCamera( pointer, camera );
+  
+  console.log("CAMERA POSITION: ")
+  console.log(camera.position);
+  console.log("RABBIT POSITION: ")
+  console.log(globalRabbit.position);
+
+  
+	// calculate objects intersecting the picking ray
+	const intersects = raycaster.intersectObjects( scene.children );
+  if (intersects.length == 0) return;
+
+  console.log(intersects[0].point);
+  let intersectionPointCoord = intersects[0].point;
+  let tileX = Math.round(intersectionPointCoord.x);
+  let tileY = Math.round(intersectionPointCoord.z);
+
+  let tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY));
+  if (tilePosition == undefined) return;
+
+  let translationVec = positionToHexDict.get(tilePosition)[1];
+  globalRabbit.position.x = translationVec.x;
+  globalRabbit.position.y = translationVec.y;
+  globalRabbit.position.z = translationVec.z;
+
+  globalRabbit.tileX = tileX;
+  globalRabbit.tileY = tileY;
+
+
+
+  /*
+  intersects[0].object.material.color.set( 0xff0000 );
+  
+  
+  	for ( let i = 0; i < intersects.length; i ++ ) {
+		intersects[ i ].object.material.color.set( 0xff0000 );
+    console.log(intersects[i].point);
+	}
+  */
+	//renderer.render( scene, camera ); 
+}
+/*
+function updateRabbit2(event) {
+  mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+  mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+
+	// update the picking ray with the camera and pointer position
+	raycaster.setFromCamera( mouse, camera );
+
+  // calculate objects intersecting the picking ray
+	const intersects = raycaster.intersectObjects( scene.children );
+
+	for ( let i = 0; i < intersects.length; i ++ ) {
+
+		intersects[ i ].object.material.color.set( 0xff0000 );
+    renderer.render( scene, camera );
+	}
+
+
+  console.log(mouse.x);
+  console.log(mouse.y);
+  console.log(globalRabbit.position);
+}*/
 // creates baby rabbits in the form of white spheres of half the radius, and adds them to the scene
 function generateBabyRabbits() {
   for (let i = 0; i < BABYRABBITS_NUM; i++) {
@@ -455,6 +552,99 @@ function updateWolves() {
     }
   }
 }
+function updateRabbitPerspective() {
+  let prevX = globalRabbit.tileX;
+  let prevY = globalRabbit.tileY;
+  if (keyState == "ArrowLeft") {
+    //camera.rotateY(1.047);
+    globalRabbit.rotateY(Math.PI/3);
+    globalRabbit.angleMetric = (globalRabbit.angleMetric + 60) % 360;
+  }
+  if (keyState == "ArrowRight") {
+    //camera.rotateY(-1.047);
+    globalRabbit.rotateY(-Math.PI/3);
+    globalRabbit.angleMetric = (globalRabbit.angleMetric - 60) % 360;
+  }
+}
+
+function moveRabbitUponSpacebar() {
+  let prevX = globalRabbit.tileX;
+  let prevY = globalRabbit.tileY;
+
+  if (keyState != " ") return;
+  console.log("ANGLE");
+  console.log(globalRabbit.angleMetric);
+
+
+  if (globalRabbit.angleMetric == 0) {
+    globalRabbit.tileX += 1;
+  }
+  if ((globalRabbit.angleMetric + 60) % 360 == 0) {
+    globalRabbit.tileX += 1;
+    globalRabbit.tileY += 1;
+  }
+  if ((globalRabbit.angleMetric + 120) % 360 == 0) {
+    globalRabbit.tileY += 1;
+  }
+
+  if ((globalRabbit.angleMetric + 180) % 360 == 0) {
+    globalRabbit.tileX -= 1;
+  }
+  if ((globalRabbit.angleMetric + 240) % 360 == 0) {
+    globalRabbit.tileY -= 1;
+  }
+  if ((globalRabbit.angleMetric + 300) % 360 == 0) {
+    globalRabbit.tileX += 1;
+    globalRabbit.tileY -= 1;
+  }
+
+
+  
+  /*
+  if (globalRabbit.angleMetric == 0) {
+    globalRabbit.tileX += 1;
+  }
+  if ((globalRabbit.angleMetric - 60) % 360 == 0) {
+    globalRabbit.tileX += 1;
+    globalRabbit.tileY += 1;
+  }
+  if ((globalRabbit.angleMetric - 120 % 360) == 0) {
+    globalRabbit.tileY += 1;
+  }
+  if ((globalRabbit.angleMetric - 180 % 360) == 0) {
+    globalRabbit.tileX -= 1;
+  }
+  if ((globalRabbit.angleMetric - 240) % 360 == 0) {
+    globalRabbit.tileY -= 1;
+  }
+  if ((globalRabbit.angleMetric - 300) % 360 == 0) {
+    globalRabbit.tileX += 1;
+    globalRabbit.tileY -= 1;
+  }*/
+
+  let tilePosition = XYtoPositionDict.get(XYto1D(globalRabbit.tileX, globalRabbit.tileY));
+
+  if (tilePosition == undefined) {
+    globalRabbit.tileX = prevX;
+    globalRabbit.tileY = prevY;
+    console.log("TILE POSITION IS INVALID");
+    return;
+  }
+  console.log(globalRabbit.tileX);
+  console.log(globalRabbit.tileY);
+
+  let translationVec = positionToHexDict.get(tilePosition)[1];
+  //let currPosition = globalRabbit.position;
+  //animateSphereMovement(rabbit, currPosition, translationVec);
+
+  globalRabbit.position.x = translationVec.x;
+  globalRabbit.position.y = translationVec.y; // + radisu;
+  globalRabbit.position.z = translationVec.z;
+
+  updateBabyRabbits();
+  updateHunterZones();
+  updateBearTraps();
+}
 
 // rabbit moves to next tile upon click
 function updateRabbit() {
@@ -529,7 +719,7 @@ function updateBearTraps() {
 
 // converts x,y coordinate to 1D (dumb implementation)
 function XYto1D(x, y) {
-  return 1000* x + y;
+  return 10000* x + y;
 }
 
 // converts index numbers for X and Y into proper coordinates for hexagons
