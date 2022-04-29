@@ -47,7 +47,7 @@ let light, ambientLight;
 const MAX_HEIGHT = 8;
 
 // map dimensions
-const LENGTH = 20;
+const LENGTH = 40;
 const MAX_DISTANCE_THRESHOLD = Math.floor(0.8 * LENGTH);
 const BABYRABBITS_NUM = Math.floor(LENGTH / 10);
 const FOXES_NUM = Math.floor(LENGTH / 15);
@@ -128,11 +128,22 @@ let keyState;
 let globalRabbit;
 
 // dictionary that maps xy 1D coordinate to tilePosition
+let bears = [];
+let foxes = [];
+
+// dictionary that maps xy 1D coordinate to tilePosition
 let XYtoPositionDict = new Map();
 let babyRabbits = [];
-let bears = [];
+let isBabyRabbitUnited = [];
 let lives = 10;
-let foxes = [];
+let totalScore = 3*3600;
+let bearTraps = [];
+
+// current Time 
+let start = Date.now(); // remember start time
+let timeScore = 0;
+  
+
 
 // general FBX loader
 function loadAsset(path) {
@@ -281,8 +292,20 @@ async function buildScene() {
   generateFoxes();
 
   // move wolves every second
+  window.setInterval(updateFoxes, 1000);
+  
+  renderer.setAnimationLoop(() => {
+    //controls.update();
+    //renderer.render(scene, camera);
+    //updateWolves();
+    //updateSphere(sphere);
+    updateScore();
+  });
+
+  // move wolves every second
   // window.setInterval(updateWolves, 1000);
   /*
+  
   renderer.setAnimationLoop(() => {
     //controls.update();
     renderer.render(scene, camera);
@@ -318,6 +341,9 @@ function generateBabyRabbits() {
       rabbit.translateZ(translationVec.z);
       rabbit.tileX = tile[1];
       rabbit.tileY = tile[2];
+
+      isBabyRabbitUnited.push(false);
+      babyRabbits.push(rabbit);
 
       scene.add(rabbit);
     })
@@ -484,12 +510,23 @@ function getRandomValidTile() {
 }
 
 // finds the tile closes in straight line distance to the rabbit
-function getClosestAdjacentTileToRabbit(allAdjacent, tileX, tileY) {
+function getClosestAdjacentTileToRabbit(allAdjacent, excluding) {
   let minDistance = Infinity;
   let closestTile;
 
+  
   for (let tile1D of allAdjacent) {
-    let tile = XYtoPositionDict.get(oneDtoXY(tile1D));
+    if (excluding != null) {
+      let skipTile = false;
+      for (let otherWolf of excluding) {
+        if (otherWolf == tile1D) {
+          skipTile = true;
+          break;
+        }
+      }
+      if (skipTile) continue;
+    }
+    let tile = XYtoPositionDict.get(tile1D);
     let rabbitPosition = XYtoPositionDict.get(XYto1D(globalRabbit.tileX, globalRabbit.tileY));
     if (tile.distanceTo(rabbitPosition) < minDistance) {
       closestTile = tile1D;
@@ -499,6 +536,61 @@ function getClosestAdjacentTileToRabbit(allAdjacent, tileX, tileY) {
   return closestTile;
 }
 
+
+  // wolves move randomly to a neighboring tile
+  function updateFoxes() {
+    //delta = clock.getDelta();
+    for (let fox of foxes) {
+      let allAdjacent = getAllAdjacentTiles(fox.tileX, fox.tileY);
+      
+      let excluding = [];
+      for (let otherFox of foxes) {
+        excluding.push(XYto1D(otherFox.tileX, otherFox.tileY));
+      }
+      let closestAdjacentTile = getClosestAdjacentTileToRabbit(allAdjacent, excluding);
+      
+      if (XYtoPositionDict.get(closestAdjacentTile) == undefined) continue;
+      
+      let translationVec = positionToHexDict.get(XYtoPositionDict.get(closestAdjacentTile))[1];
+      
+      /*
+      console.log("rabbit's position");
+      console.log(globalRabbit.tileX, globalRabbit.tileY);
+  
+      console.log("FOX's old position");
+      console.log(fox.tileX, fox.tileY); */
+  
+      fox.position.x = translationVec.x;
+      fox.position.y = translationVec.y; //+ radius/2;
+      fox.position.z = translationVec.z;
+  
+      let arr = oneDtoXY(closestAdjacentTile);
+      fox.tileX = arr[0];
+      fox.tileY = arr[1];
+  
+      /*
+      console.log("Fox's new position");
+      console.log(fox.tileX, fox.tileY); */
+  
+      if ((globalRabbit.position.x == fox.position.x) && (globalRabbit.position.z == fox.position.z)) {
+        lives--;
+        totalScore = Math.round(totalScore*0.93);
+      }
+      // check if contact with any of the babyRabbits
+      for (let babyRabbit of babyRabbits) {
+        if ((babyRabbit.position.x == fox.position.x) && (globalRabbit.position.z == fox.position.z)) {
+          console.log("BABY RABBIT REMOVED");
+          scene.remove(babyRabbit);
+          totalScore = Math.round(totalScore * 0.85);
+          //numOfBabiesSaved -= 1;
+        }
+      }
+  
+    }
+  }
+  
+
+/*
 // wolves move randomly to a neighboring tile
 function updateFoxes() {
   //delta = clock.getDelta();
@@ -521,7 +613,7 @@ function updateFoxes() {
     }
   }
 }
-
+*/
 function updateRabbitPerspective() {
   let prevX = globalRabbit.tileX;
   let prevY = globalRabbit.tileY;
@@ -585,10 +677,12 @@ function moveRabbitUponSpacebar() {
       globalRabbit.tileX += 0;
       globalRabbit.tileY += -1;
     }
-  }
+  }  
+  //   check of the one that you want to go to is a valid tile
+
   let tilePosition = XYtoPositionDict.get(XYto1D(globalRabbit.tileX, globalRabbit.tileY));
 
-  if (tilePosition == undefined) {
+  if ((tilePosition == undefined)) {
     globalRabbit.tileX = prevX;
     globalRabbit.tileY = prevY;
     return;
@@ -630,28 +724,59 @@ function updateRabbit() {
   globalRabbit.position.z = translationVec.z;
 
   updateBabyRabbits();
-  updateHunterZones();
+  //updateHunterZones();
   updateBearTraps();
 
 }
 
 // Baby rabbits disappear upon contact with rabbit
 function updateBabyRabbits() {
-  for (let babyRabbit of babyRabbits) {
+  let allAdjacent = getAllAdjacentTiles(globalRabbit.tileX, globalRabbit.tileY);
+
+  for (let i = 0; i < babyRabbits.length; i++) {
+    let babyRabbit = babyRabbits[i];
+    // if babyRabbit is on same position as rabbit, update babyRabbitUnited array
     if ((babyRabbit.tileX == globalRabbit.tileX) && (babyRabbit.tileY == globalRabbit.tileY)) {
-      scene.remove(babyRabbit);
+      //numOfBabiesSaved++;
+      isBabyRabbitUnited[i] = true;
     }
+    // if the baby rabbit isn't even united, don't worry
+    if (!isBabyRabbitUnited[i]) {
+      continue;
+    }
+    let tilePositionOfGlobalRabbit = XYtoPositionDict.get(XYto1D(globalRabbit.tileX, globalRabbit.tileY));
+    if (allAdjacent == null) break;
+    if (i >= allAdjacent.length) continue;
+
+    // if you are on water tile and baby is not adjacent to you, baby should remain where it is
+    //if (!checkValidTile(tilePositionOfGlobalRabbit)) continue;
+    /*
+    console.log(allAdjacent);
+    console.log(i);
+    console.log(allAdjacent[i]);
+    console.log(XYtoPositionDict.get(allAdjacent[i]));
+    console.log(positionToHexDict.get(XYtoPositionDict.get(allAdjacent[i]))); */
+    let translationVec = positionToHexDict.get(XYtoPositionDict.get(allAdjacent[i]))[1]
+    babyRabbit.position.x = translationVec.x;
+    babyRabbit.position.y = translationVec.y;// + radius/2;
+    babyRabbit.position.z = translationVec.z;
+
+    let arr = oneDtoXY(allAdjacent[i]);
+    babyRabbit.tileX, babyRabbit.tileY = arr[0], arr[1];
   }
 }
+  
+function updateScore() {
+  let timePassed = Math.round((Date.now() - start)/1000);
+  totalScore = totalScore + timeScore - timePassed;
+  timeScore = timePassed;
 
-// updates rabbit lives
-function updateLives() {
-  if (lives != 0) {
-    lives--;
-    let heartString = "";
-    for (let i = 0; i < lives; i++) heartString += "❤️";
-    document.getElementById('Number of Lives').innerHTML = heartString;
-  }
+  let heartString = "";
+  for (let i = 0; i < lives; i++) heartString += "❤️";
+  
+  document.getElementById('totalScore').innerHTML = "Total Score: " + totalScore.toString();
+  document.getElementById('hitpoints').innerHTML = "Lives Remaining: " + heartString;
+  requestAnimationFrame(updateScore);
 }
 
 // bear traps spin up out of the ground upon contact with rabbit
@@ -670,7 +795,7 @@ function XYto1D(x, y) {
 
 // converts 1D coordinate to tileX, tileY (dumb implementation)
 function oneDtoXY(key) {
-  return key / 10000, key % 10000;
+  return [Math.floor(key / 10000), Math.round(mod(key, 10000))];
 }
 
 // converts index numbers for X and Y into proper coordinates for hexagons
