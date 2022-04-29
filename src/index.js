@@ -1,47 +1,77 @@
 // file imports directly from CDN
 import {
-  WebGLRenderer, ACESFilmicToneMapping, sRGBEncoding, Color, CylinderGeometry,
-  RepeatWrapping, DoubleSide, BoxGeometry, Mesh, PointLight, MeshPhysicalMaterial,
-  PerspectiveCamera, Scene, PMREMGenerator, PCFSoftShadowMap, Vector2, Vector3, TextureLoader,
-  SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, FloatType, VSMShadowMap, ConeGeometry,
-  AmbientLight, Raycaster
-} from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
-import { FBXLoader } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/loaders/FBXLoader';
-import { OrbitControls } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/controls/OrbitControls';
-import { RGBELoader } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/loaders/RGBELoader';
-import { mergeBufferGeometries } from 'https://cdn.skypack.dev/three-stdlib@2.8.5/utils/BufferGeometryUtils';
+  WebGLRenderer,
+  ACESFilmicToneMapping,
+  sRGBEncoding,
+  Color,
+  Clock,
+  CylinderGeometry,
+  CircleGeometry,
+  PlaneGeometry,
+  RepeatWrapping,
+  DoubleSide,
+  BoxGeometry,
+  Mesh,
+  PointLight,
+  MeshPhysicalMaterial,
+  PerspectiveCamera,
+  Scene,
+  PMREMGenerator,
+  PCFSoftShadowMap,
+  Vector2,
+  Vector3,
+  TextureLoader,
+  SphereGeometry,
+  MeshStandardMaterial,
+  MeshBasicMaterial,
+  FloatType,
+  ConeGeometry,
+  AmbientLight
+} from 'three';
+
+import { OrbitControls } from 'OrbitControls';
+import { FBXLoader } from 'FBXLoader';
+import { RGBELoader } from 'RGBELoader';
+import { mergeBufferGeometries } from 'BufferGeometryUtils';
+import { Water } from 'Water';
+
 import SimplexNoise from 'https://cdn.skypack.dev/simplex-noise';
-//import { TWEEN } from 'three/examples/jsm/libs/tween.module.min.js';
 
 // Instantiate Relevant Items
-let scene, camera, controls, renderer;
+let scene, camera, controls, renderer, clock, water;
 let envmap, pmrem;
 let light, ambientLight;
 
 // Define World Settings
 // we can control max height to make things more flat or not.
-const MAX_HEIGHT = 10;
+const MAX_HEIGHT = 8;
 
 // map dimensions
-const LENGTH = 40;
+const LENGTH = 20;
 const MAX_DISTANCE_THRESHOLD = Math.floor(0.8 * LENGTH);
-const BABYRABBITS_NUM = 3;
-const WOLVES_NUM = 10;
-const BEARTRAPS_NUM = 2;
-const HUNTERS_NUM = 0;
+const BABYRABBITS_NUM = Math.floor(LENGTH / 10);
+const FOXES_NUM = Math.floor(LENGTH / 15);
+const BEARS_NUM = Math.floor(LENGTH / 45);
+const WATER_HEIGHT = 0.15;
 
 function initScene() {
   // Initialize Camera
-  camera = new PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1000);
+  camera = new PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
   camera.position.set(-17, 35, 31);
 
   // Initialize Scene
   scene = new Scene();
   scene.background = new Color("#FFEECC");
 
+  //Initialize Clock
+  clock = new Clock();
+
   // Initialize Renderer
-  renderer = new WebGLRenderer({ antialias: true });
+  renderer = new WebGLRenderer({
+    antialias: true
+  });
   renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio( window.devicePixelRatio );
 
   // ACES Filmic Tone Mapping maps high dynamic range (HDR) lighting conditions
   // to low dynamic range (LDR) digital screen representations.
@@ -62,12 +92,13 @@ function initScene() {
   controls.dampingFactor = 0.05;
   controls.enableDamping = true;
   controls.enableZoom = true;
+  controls.enablePan = true;
 }
 
 function initLights() {
   // set up lights, color should be mostly white. Even a small bit other imbalance
   // is shown pretty obviously.
-  light = new PointLight( new Color("#fee2d2").convertSRGBToLinear().convertSRGBToLinear(), 60, 200 );
+  light = new PointLight(new Color("#fee2d2").convertSRGBToLinear().convertSRGBToLinear(), 60, 200);
   light.position.set(10, 20, 10);
 
   light.castShadow = true;
@@ -78,55 +109,30 @@ function initLights() {
   scene.add(light);
 
   // add ambient lighting to soften things out
-  ambientLight = new AmbientLight( new Color("#fee2d2").convertSRGBToLinear().convertSRGBToLinear(), 0.5);
+  ambientLight = new AmbientLight(new Color("#fee2d2").convertSRGBToLinear().convertSRGBToLinear(), 0.5);
   ambientLight.position.set(-5, 10, -15);
   scene.add(ambientLight);
 }
 
 initScene();
 initLights();
-buildAnimate();
+buildScene();
+animateScene();
 
 // dictionary that maps the tilePosition to the hex
 let positionToHexDict = new Map();
+// map storing impassible terrain
+let hardTerrain = new Map();
 // keyState of up down left or right
 let keyState;
-// radius of rabbit
-let radius = 1;
-
 let globalRabbit;
+
 // dictionary that maps xy 1D coordinate to tilePosition
 let XYtoPositionDict = new Map();
 let babyRabbits = [];
-let hunters = [];
-let hunterZones = [];
+let bears = [];
 let lives = 10;
-let bearTraps = [];
-let wolves = [];
-let pointer = new Vector2(0, 0);
-const raycaster = new Raycaster();
-
-
-
-
-/* code taken below is from:
-https://www.reddit.com/r/learnjavascript/comments/9jovpn/how_can_i_load_a_3d_model_asynchronously_in/ */
-async function configureMaterials(child){
-  if(child instanceof Mesh){
-      //load in the texture and "wait" until the texture's loaded - assuming the TextureLoader works like the FBXLoader
-      const texturemap           = await new Promise(loadTexture);
-      //configure the material now that we have all of the data
-      child.material.map         = texturemap;
-      child.material.needsUpdate = true;
-  }
-}
-
-//helper function to load-in the dummy model
-function loadDummyRabbit(resolve, reject){
-  const fbxLoader = new FBXLoader();
-  const dummyPath = "assets/rabbit.FBX";
-  fbxLoader.load(dummyPath, (dummy) => resolve(dummy));
-}
+let foxes = [];
 
 // general FBX loader
 function loadAsset(path) {
@@ -136,15 +142,6 @@ function loadAsset(path) {
   })
 }
 
-/*
-//helper function to load-in the dummy model
-function loadDummyWolf(resolve, reject){
-  const fbxLoader = new FBXLoader();
-  const dummyPath = "assets/bear-fbx.FBX";
-  fbxLoader.load(dummyPath, (dummy) => resolve(dummy));
-}*/
-/* ends here */
-
 // this entire function is asynchronous, meaning that it is not concerned with
 // the order in which things are declared/instantiated as long as dependencies
 // are declared/instantiated at some point within this file. Note that this function
@@ -153,7 +150,7 @@ function loadDummyWolf(resolve, reject){
 
 // also note that, within the async function, order still matters when it comes
 // to instantiating/declaring things in the right order.
-async function buildAnimate() {
+async function buildScene() {
   // environment map set up. await in this case means that the command here will
   // wait for RGBE Loader to finish processing the HDR file before continuing.
   let pmrem = new PMREMGenerator(renderer);
@@ -162,13 +159,6 @@ async function buildAnimate() {
   let envmapTexture = await new RGBELoader().loadAsync("assets/envmap.hdr");
   let rt = pmrem.fromEquirectangular(envmapTexture);
   envmap = rt.texture;
-
-  //load in the dummy fbx model here, "wait" until it's done
-  const rabbit = await new Promise(loadDummyRabbit);
-  //do your material setup here like normal
-  rabbit.traverse(configureMaterials);
-  //assuming your scene doesn't need to wait for the textures, add it straight way
-  rabbit.scale.multiplyScalar(0.07); // use 0.07
 
   // load in textures for different hex types. Using minecraft texture packs
   // is actually a very good idea for skinning the tiles.
@@ -187,17 +177,25 @@ async function buildAnimate() {
 
   // create 40x40 hex map, varying height using simplex noise. This will be
   // larger for our purposes, but I haven't tested quite yet.
-  for(let i = -LENGTH; i <= LENGTH; i++) {
-    for(let j = -LENGTH; j <= LENGTH; j++) {
+  for (let i = -LENGTH; i <= LENGTH; i++) {
+    for (let j = -LENGTH; j <= LENGTH; j++) {
+      // calculate position for current tile
       let position = tileToPosition(i, j);
-      if(position.length() > MAX_DISTANCE_THRESHOLD) continue;
-      XYtoPositionDict.set(XYto1D(i,j), position);
 
-      let noise = (simplex.noise2D(i * 0.1, j * 0.1) + 1) * 0.5;
-      noise = Math.pow(noise, 1.5);
+      // if position is within desired radius, add a hex
+      if (position.length() < MAX_DISTANCE_THRESHOLD) {
+        let noise = (simplex.noise2D(i * 0.1, j * 0.1) + 1) * 0.5;
+        noise = Math.pow(noise, 1.5);
 
-      hex(noise * MAX_HEIGHT, position, envmap);
+        XYtoPositionDict.set(XYto1D(i, j), position);
+        if (noise <= WATER_HEIGHT) {
+          hardTerrain.set(position, 1);
+        } else {
+          hardTerrain.set(position, 0);
+        }
 
+        hex(noise * MAX_HEIGHT, position, envmap);
+      }
     }
   }
 
@@ -205,8 +203,8 @@ async function buildAnimate() {
   let stoneMesh = hexMesh(stoneGeo, textures.stone);
   let grassMesh = hexMesh(grassGeo, textures.grass);
   let dirt2Mesh = hexMesh(dirt2Geo, textures.dirt2);
-  let dirtMesh  = hexMesh(dirtGeo, textures.dirt);
-  let sandMesh  = hexMesh(sandGeo, textures.sand);
+  let dirtMesh = hexMesh(dirtGeo, textures.dirt);
+  let sandMesh = hexMesh(sandGeo, textures.sand);
   scene.add(stoneMesh, dirtMesh, dirt2Mesh, sandMesh, grassMesh);
 
   // adds the water texture
@@ -215,49 +213,26 @@ async function buildAnimate() {
   seaTexture.wrapS = RepeatWrapping;
   seaTexture.wrapT = RepeatWrapping;
 
-  // defines and adds the mesh for water surface
-  // can consider using water.js from three.js examples here
-  let seaMesh = new Mesh(
-    new CylinderGeometry(0.85*LENGTH, 0.85 * LENGTH, MAX_HEIGHT * 0.2, 50),
-    new MeshPhysicalMaterial({
-      envMap: envmap,
-      color: new Color("#55aaff").convertSRGBToLinear().multiplyScalar(3),
-      ior: 1.4,
-      transmission: 1,
-      transparent: true,
-      thickness: 1.5,
-      envMapIntensity: 0.2,
-      roughness: 1,
-      metalness: 0.025,
-      roughnessMap: seaTexture,
-      metalnessMap: seaTexture,
-    })
-  );
-  seaMesh.receiveShadow = true;
-  seaMesh.rotation.y = -Math.PI * 0.333 * 0.5;
-  seaMesh.position.set(0, MAX_HEIGHT * 0.1, 0);
-  scene.add(seaMesh);
+  // water.js water
+  const textureLoader = new TextureLoader();
+  const waterGeometry = new CircleGeometry( 0.85 * LENGTH, 64 );
+	water = new Water( waterGeometry, {
+		color: new Color("#ffffff"),
+		scale: 1,
+		flowDirection: new Vector2( 0.1 , 0.05 ),
+		textureWidth: 1024,
+		textureHeight: 1024,
+    normalMap0: textureLoader.load( 'assets/Water_1_M_Normal.jpg' ),
+    normalMap1: textureLoader.load( 'assets/Water_2_M_Normal.jpg' ),
+	} );
 
-  // defines and adds the cylinder containing the map
-  /*
-  let mapContainer = new Mesh(
-    new CylinderGeometry(17.1, 17.1, MAX_HEIGHT * 0.25, 50, 1, true),
-    new MeshPhysicalMaterial({
-      envMap: envmap,
-      map: textures.dirt,
-      envMapIntensity: 0.2,
-      side: DoubleSide,
-    })
-  );
-  mapContainer.receiveShadow = true;
-  mapContainer.rotation.y = -Math.PI * 0.333 * 0.5;
-  mapContainer.position.set(0, MAX_HEIGHT * 0.125, 0);
-  scene.add(mapContainer);
-  */
+	water.position.set(0, MAX_HEIGHT * WATER_HEIGHT, 0);
+	water.rotation.x = Math.PI * - 0.5;
+	scene.add( water );
 
   // defines and adds the map floor
   let mapFloor = new Mesh(
-    new CylinderGeometry(0.9 * LENGTH, 0.9*LENGTH, MAX_HEIGHT * 0.1, 50),
+    new CylinderGeometry(0.9 * LENGTH, 0.9 * LENGTH, MAX_HEIGHT * 0.1, 50),
     new MeshPhysicalMaterial({
       envMap: envmap,
       map: textures.dirt2,
@@ -269,164 +244,111 @@ async function buildAnimate() {
   mapFloor.position.set(0, -MAX_HEIGHT * 0.05, 0);
   scene.add(mapFloor);
 
-  globalRabbit = rabbit;
-  globalRabbit.angleMetric = 60;
-  globalRabbit.rotateY(Math.PI/6);
-  globalRabbit.rotateY(2*Math.PI/3);
+  // load in rabbit asset and set global rabbit variable
+  loadAsset('assets/rabbit.fbx').then((rabbit) => {
+    rabbit.scale.multiplyScalar(0.05);
 
-  // translate rabbit
-  let tilePosition = XYtoPositionDict.get(XYto1D(0, 0));
-  let translationVec = positionToHexDict.get(tilePosition)[1];
-  rabbit.translateX(translationVec.x);
-  rabbit.translateY(translationVec.y);
-  rabbit.translateZ(translationVec.z);
-  rabbit.tileX = 0;
-  rabbit.tileY = 0;
+    let tilePosition = XYtoPositionDict.get(XYto1D(0, 0));
+    let translationVec = positionToHexDict.get(tilePosition)[1];
 
-  scene.add(rabbit);
+    rabbit.translateX(translationVec.x);
+    rabbit.translateY(translationVec.y);
+    rabbit.translateZ(translationVec.z);
+    rabbit.tileX = 0;
+    rabbit.tileY = 0;
 
-  // this centers the camera controls on the rabbit
-  //controls.target = rabbit.position;
+    scene.add(rabbit);
 
+    globalRabbit = rabbit;
+    globalRabbit.angleMetric = 60;
+    globalRabbit.rotateY(Math.PI / 6);
+    globalRabbit.rotateY(2 * Math.PI / 3);
+  })
 
   // add event listener for rabbit
-  document.addEventListener("keydown", function (event) {
+  document.addEventListener("keydown", function(event) {
     keyState = event.key;
+    moveRabbitUponSpacebar();
     updateRabbitPerspective();
   });
 
-  
-  
-  // add event listener for rabbit
-  document.addEventListener("keydown", function (event) {
-    keyState = event.key;
-    moveRabbitUponSpacebar();
-  });
-
-  /*
-  // add event listener for rabbit for mouse click
-  document.addEventListener( 'click', function (event) {
-    updateRabbit2(event);
-  }); */
-  //window.addEventListener( 'click', onPointerMove );
-  //window.requestAnimationFrame(render);
-
   // add baby rabbits (for now, spheres with smaller radii)
   generateBabyRabbits();
-  // add hunters to the scene
-  generateHunters();
+  // add bears to the scene
+  generateBears();
   // add bear traps to the scene
-  generateBearTraps();
-  generateWolves();
+  // generateBearTraps();
+  generateFoxes();
 
   // move wolves every second
-  window.setInterval(updateWolves, 1000);
-
+  // window.setInterval(updateWolves, 1000);
+  /*
   renderer.setAnimationLoop(() => {
     //controls.update();
     renderer.render(scene, camera);
     //updateWolves();
-    //updateSphere(sphere);
-  });
+  }); */
 }
-function onPointerMove( event ) {
-	// calculate pointer position in normalized device coordinates
-	// (-1 to +1) for both components
-	pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
-	pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
-  render();
+
+// animation
+function animateScene() {
+  requestAnimationFrame( animateScene );
+  controls.update();
+	render();
 }
 
 function render() {
-	// update the picking ray with the camera and pointer position
-	raycaster.setFromCamera( pointer, camera );
-    
-	// calculate objects intersecting the picking ray
-	const intersects = raycaster.intersectObjects( scene.children );
-  if (intersects.length == 0) return;
-
-  let intersectionPointCoord = intersects[0].point;
-  let tileX = Math.round(intersectionPointCoord.x);
-  let tileY = Math.round(intersectionPointCoord.z);
-
-  let tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY));
-  if (tilePosition == undefined) return;
-
-  let translationVec = positionToHexDict.get(tilePosition)[1];
-  globalRabbit.position.x = translationVec.x;
-  globalRabbit.position.y = translationVec.y;
-  globalRabbit.position.z = translationVec.z;
-
-  globalRabbit.tileX = tileX;
-  globalRabbit.tileY = tileY;
-
+  const delta = clock.getDelta();
+  renderer.render(scene, camera);
 }
+
 // creates baby rabbits in the form of white spheres of half the radius, and adds them to the scene
 function generateBabyRabbits() {
   for (let i = 0; i < BABYRABBITS_NUM; i++) {
-    let geometry = new SphereGeometry( radius/2, 32, 16 );
-    let material = new MeshBasicMaterial( { color: 0xffffff} );
-    let babyRabbit = new Mesh( geometry, material );
-    babyRabbits.push(babyRabbit);
-    scene.add(babyRabbit);
-    // randomly put baby rabbits on the scene
-    while (true) {
-      let i = Math.floor(MAX_DISTANCE_THRESHOLD* Math.random() - MAX_DISTANCE_THRESHOLD/2);
-      let j = Math.floor(MAX_DISTANCE_THRESHOLD * Math.random() - MAX_DISTANCE_THRESHOLD/2);
-      let tilePosition = XYtoPositionDict.get(XYto1D(i, j));
-      // keep looking for tiles until you have one that is actually on the terrain
-      if (tilePosition == undefined) continue;
-      let translationVec = positionToHexDict.get(tilePosition)[1];
-      babyRabbit.translateX(translationVec.x);
-      babyRabbit.translateY(translationVec.y + radius/2);
-      babyRabbit.translateZ(translationVec.z);
-      babyRabbit.tileX = i;
-      babyRabbit.tileY = j;
-      break;
-    }
+    // get a random valid tile
+    let tile = getRandomValidTile();
+    // load in rabbit asset and set global rabbit variable
+    loadAsset('assets/rabbit.fbx').then((rabbit) => {
+      rabbit.scale.multiplyScalar(0.03);
+
+      let translationVec = positionToHexDict.get(tile[0])[1];
+
+      rabbit.translateX(translationVec.x);
+      rabbit.translateY(translationVec.y);
+      rabbit.translateZ(translationVec.z);
+      rabbit.tileX = tile[1];
+      rabbit.tileY = tile[2];
+
+      scene.add(rabbit);
+    })
   }
 }
 
-// creates hunters in the form of blue rectangular boxes, and adds them to the scene
-function generateHunters() {
-  for (let i = 0; i < HUNTERS_NUM; i++) {
-    let geometry = new BoxGeometry( radius/2, 4, radius/2);
-    let material = new MeshBasicMaterial( { color:  0x0000FF} );
-    let hunter = new Mesh( geometry, material );
-    hunters.push(hunter);
-    scene.add(hunter);
-    // add hunterZones
-    geometry = new CylinderGeometry( 4 * radius, 4* radius, 0, 40, true );
-    material = new MeshBasicMaterial( {color: 0xff0000} );
-    let hunterZone = new Mesh( geometry, material );
+// creates bears and adds them to the scene
+function generateBears() {
+  for (let i = 0; i < BEARS_NUM; i++) {
+    // get a random valid tile
+    let tile = getRandomValidTile();
+    // load in bear asset and set global bear variable
+    loadAsset('assets/08bearFinal.fbx').then((bear) => {
+      bear.scale.multiplyScalar(0.015);
 
-    hunterZones.push(hunterZone);
-    scene.add(hunterZone);
-    // randomly put hunters on the scene
-    while (true) {
-      let i = Math.floor(MAX_DISTANCE_THRESHOLD* Math.random() - MAX_DISTANCE_THRESHOLD/2);
-      let j = Math.floor(MAX_DISTANCE_THRESHOLD * Math.random() - MAX_DISTANCE_THRESHOLD/2);
-      let tilePosition = XYtoPositionDict.get(XYto1D(i, j));
-      // keep looking for tiles until you have one that is actually on the terrain
-      if (tilePosition == undefined) continue;
-      let translationVec = positionToHexDict.get(tilePosition)[1];
-      hunter.translateX(translationVec.x);
-      hunter.translateY(translationVec.y + radius/2);
-      hunter.translateZ(translationVec.z);
-      hunter.tileX = i;
-      hunter.tileY = j;
-      // change position of hunterZone
-      hunterZone.translateX(translationVec.x);
-      hunterZone.translateY(translationVec.y);
-      hunterZone.translateZ(translationVec.z);
-      hunterZone.tileX = i;
-      hunterZone.tileY = j;
-      break;
-    }
+      let translationVec = positionToHexDict.get(tile[0])[1];
+
+      bear.translateX(translationVec.x);
+      bear.translateY(translationVec.y);
+      bear.translateZ(translationVec.z);
+      bear.tileX = tile[1];
+      bear.tileY = tile[2];
+
+      bears.push(bear);
+      scene.add(bear);
+    })
   }
 }
 
 // creates bear traps in the form of yellow cones, and adds them to the scene
+/*
 function generateBearTraps() {
   for (let i = 0; i < BEARTRAPS_NUM; i++) {
     let geometry = new ConeGeometry( 1, 5, 32 );
@@ -452,74 +374,116 @@ function generateBearTraps() {
     }
   }
 }
+*/
 
 // creates wolves in the form of yellow black spheres, and adds them to the scene
-function generateWolves() {
-  for (let i = 0; i < WOLVES_NUM; i++) {
-    let geometry = new SphereGeometry( radius/2, 32, 16 );
-    let material = new MeshBasicMaterial( {color: 0x000000} );
-    let wolf = new Mesh( geometry, material );
+function generateFoxes() {
+  for (let i = 0; i < FOXES_NUM; i++) {
+    // get a random valid tile
+    let tile = getRandomValidTile();
+    // load in fox asset
+    loadAsset('assets/01foxFinal.fbx').then((fox) => {
+      fox.scale.multiplyScalar(0.017);
 
-    wolves.push(wolf);
-    scene.add(wolf);
-    // randomly put bear traps on the scene
-    while (true) {
-      let i = Math.floor(MAX_DISTANCE_THRESHOLD* Math.random() - MAX_DISTANCE_THRESHOLD/2);
-      let j = Math.floor(MAX_DISTANCE_THRESHOLD * Math.random() - MAX_DISTANCE_THRESHOLD/2);
-      let tilePosition = XYtoPositionDict.get(XYto1D(i, j));
-      // keep looking for tiles until you have one that is actually on the terrain
-      if (tilePosition == undefined) continue;
-      let translationVec = positionToHexDict.get(tilePosition)[1];
-      wolf.translateX(translationVec.x);
-      wolf.translateY(translationVec.y + radius/2);
-      wolf.translateZ(translationVec.z);
-      wolf.tileX = i;
-      wolf.tileY = j;
-      break;
-    }
+      let translationVec = positionToHexDict.get(tile[0])[1];
+
+      fox.translateX(translationVec.x);
+      fox.translateY(translationVec.y);
+      fox.translateZ(translationVec.z);
+      fox.tileX = tile[1];
+      fox.tileY = tile[2];
+
+      foxes.push(fox);
+      scene.add(fox);
+    })
+
   }
 }
+
+// returns all accessible adjacent tiles
 function getAllAdjacentTiles(tileX, tileY) {
   let possibleTiles = [];
-  
   let tilePosition;
 
-  tilePosition = XYtoPositionDict.get(XYto1D(tileX+1, tileY));
-  if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX+1, tileY));
+  tilePosition = XYtoPositionDict.get(XYto1D(tileX + 1, tileY));
+  if (checkValidTile(tilePosition)) {
+    possibleTiles.push(XYto1D(tileX + 1, tileY));
+  }
 
-  tilePosition = XYtoPositionDict.get(XYto1D(tileX-1, tileY));
-  if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX-1, tileY));
+  tilePosition = XYtoPositionDict.get(XYto1D(tileX - 1, tileY));
+  if (checkValidTile(tilePosition)) {
+    possibleTiles.push(XYto1D(tileX - 1, tileY));
+  }
 
   // if y tile is even
   if (mod(tileY, 2) == 1) {
-    tilePosition = XYtoPositionDict.get(XYto1D(tileX+1, tileY+1));
-    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX+1, tileY+1));
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX + 1, tileY + 1));
+    if (checkValidTile(tilePosition)) {
+      possibleTiles.push(XYto1D(tileX + 1, tileY + 1));
+    }
 
-    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY+1));
-    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX, tileY+1));
-    
-    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY-1));
-    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX, tileY-1));
-    
-    tilePosition = XYtoPositionDict.get(XYto1D(tileX+1, tileY-1));
-    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX+1, tileY-1));
-  }
-  else if (mod(tileY, 2) == 0) {
-    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY+1));
-    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX, tileY+1));
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY + 1));
+    if (checkValidTile(tilePosition)) {
+      possibleTiles.push(XYto1D(tileX, tileY + 1));
+    }
 
-    tilePosition = XYtoPositionDict.get(XYto1D(tileX-1, tileY+1));
-    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX-1, tileY+1));
-    
-    tilePosition = XYtoPositionDict.get(XYto1D(tileX-1, tileY-1));
-    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX-1, tileY-1));
-    
-    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY-1));
-    if (tilePosition != undefined) possibleTiles.push(XYto1D(tileX, tileY-1));
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY - 1));
+    if (checkValidTile(tilePosition)) {
+      possibleTiles.push(XYto1D(tileX, tileY - 1));
+    }
+
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX + 1, tileY - 1));
+    if (checkValidTile(tilePosition)) {
+      possibleTiles.push(XYto1D(tileX + 1, tileY - 1));
+    }
+  } else if (mod(tileY, 2) == 0) {
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY + 1));
+    if (checkValidTile(tilePosition)) {
+      possibleTiles.push(XYto1D(tileX, tileY + 1));
+    }
+
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX - 1, tileY + 1));
+    if (checkValidTile(tilePosition)) {
+      possibleTiles.push(XYto1D(tileX - 1, tileY + 1));
+    }
+
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX - 1, tileY - 1));
+    if (checkValidTile(tilePosition)) {
+      possibleTiles.push(XYto1D(tileX - 1, tileY - 1));
+    }
+
+    tilePosition = XYtoPositionDict.get(XYto1D(tileX, tileY - 1));
+    if (checkValidTile(tilePosition)) {
+      possibleTiles.push(XYto1D(tileX, tileY - 1));
+    }
   }
   return possibleTiles;
 }
 
+// helper function for getting adjacent tiles
+function checkValidTile(tilePosition) {
+  return getByValue(XYtoPositionDict, tilePosition) != undefined && hardTerrain.get(tilePosition) != 1;
+}
+
+// helper function for getting a valid random tile
+function getRandomValidTile() {
+  while (true) {
+    let i = Math.floor(MAX_DISTANCE_THRESHOLD * Math.random() - MAX_DISTANCE_THRESHOLD / 2);
+    let j = Math.floor(MAX_DISTANCE_THRESHOLD * Math.random() - MAX_DISTANCE_THRESHOLD / 2);
+
+    let tilePosition = XYtoPositionDict.get(XYto1D(i, j));
+    // keep looking for tiles until you have one that is actually on the terrain
+    if (tilePosition == undefined) continue;
+    if (!checkValidTile(tilePosition)) continue;
+
+    // set this tile position to be occupied
+    hardTerrain.set(tilePosition, 1);
+
+    return [tilePosition, i, j];
+  }
+}
+
+// finds the tile closes in straight line distance to the rabbit
 function getClosestAdjacentTileToRabbit(allAdjacent, tileX, tileY) {
   let minDistance = Infinity;
   let closestTile;
@@ -536,23 +500,23 @@ function getClosestAdjacentTileToRabbit(allAdjacent, tileX, tileY) {
 }
 
 // wolves move randomly to a neighboring tile
-function updateWolves() {
+function updateFoxes() {
   //delta = clock.getDelta();
-  for (let wolf of wolves) {
-    let allAdjacent = getAllAdjacentTiles(wolf.tileX, wolf.tileY);
-    let closestAdjacentTile = getClosestAdjacentTileToRabbit(allAdjacent, wolf.tileX, wolf.tileY);
-    
+  for (let fox of foxes) {
+    let allAdjacent = getAllAdjacentTiles(fox.tileX, fox.tileY);
+    let closestAdjacentTile = getClosestAdjacentTileToRabbit(allAdjacent, fox.tileX, fox.tileY);
+
     if (XYtoPositionDict.get(oneDtoXY(closestAdjacentTile)) == undefined) continue;
-    
+
     let translationVec = positionToHexDict.get(XYtoPositionDict.get(oneDtoXY(closestAdjacentTile)))[1];
 
-    wolf.position.x = translationVec.x;
-    wolf.position.y = translationVec.y + radius/2;
-    wolf.position.z = translationVec.z;
+    fox.position.x = translationVec.x;
+    fox.position.y = translationVec.y + radius / 2;
+    fox.position.z = translationVec.z;
 
-    wolf.tileX, wolf.tileY = oneDtoXY(closestAdjacentTile);
+    fox.tileX, fox.tileY = oneDtoXY(closestAdjacentTile);
 
-    if ((globalRabbit.position.x == wolf.position.x) && (globalRabbit.position.z == wolf.position.z)) {
+    if ((globalRabbit.position.x == fox.position.x) && (globalRabbit.position.z == fox.position.z)) {
       updateLives();
     }
   }
@@ -563,12 +527,12 @@ function updateRabbitPerspective() {
   let prevY = globalRabbit.tileY;
   if (keyState == "ArrowLeft") {
     //camera.rotateY(1.047);
-    globalRabbit.rotateY(Math.PI/3);
+    globalRabbit.rotateY(Math.PI / 3);
     globalRabbit.angleMetric = mod(globalRabbit.angleMetric + 60, 360);
   }
   if (keyState == "ArrowRight") {
     //camera.rotateY(-1.047);
-    globalRabbit.rotateY(-Math.PI/3);
+    globalRabbit.rotateY(-Math.PI / 3);
     globalRabbit.angleMetric = mod(globalRabbit.angleMetric - 60, 360);
   }
 }
@@ -585,13 +549,12 @@ function moveRabbitUponSpacebar() {
 
   if (mod(globalRabbit.angleMetric, 360) == 0) {
     globalRabbit.tileX += 1;
-  }
-  else if (mod(globalRabbit.angleMetric + 180, 360) == 0) {
+  } else if (mod(globalRabbit.angleMetric + 180, 360) == 0) {
     globalRabbit.tileX -= 1;
-  } 
+  }
   // if y tile is even
   else if (mod(prevY, 2) == 1) {
-    if (mod(globalRabbit.angleMetric + 60, 360)== 0) {
+    if (mod(globalRabbit.angleMetric + 60, 360) == 0) {
       globalRabbit.tileX += 1;
       globalRabbit.tileY += 1;
     }
@@ -605,8 +568,7 @@ function moveRabbitUponSpacebar() {
       globalRabbit.tileX += 1;
       globalRabbit.tileY -= 1;
     }
-  }
-  else if (mod(prevY, 2) == 0) {
+  } else if (mod(prevY, 2) == 0) {
     if (mod(globalRabbit.angleMetric + 60, 360) == 0) {
       globalRabbit.tileX += 0;
       globalRabbit.tileY += 1;
@@ -615,9 +577,9 @@ function moveRabbitUponSpacebar() {
       globalRabbit.tileX += -1;
       globalRabbit.tileY += 1;
     }
-    if (mod(globalRabbit.angleMetric + 240, 360)== 0) {
+    if (mod(globalRabbit.angleMetric + 240, 360) == 0) {
       globalRabbit.tileX += -1;
-      globalRabbit.tileY += -1;    
+      globalRabbit.tileY += -1;
     }
     if (mod(globalRabbit.angleMetric + 300, 360) == 0) {
       globalRabbit.tileX += 0;
@@ -639,7 +601,6 @@ function moveRabbitUponSpacebar() {
   globalRabbit.position.z = translationVec.z;
 
   updateBabyRabbits();
-  updateHunterZones();
   updateBearTraps();
 }
 
@@ -683,18 +644,6 @@ function updateBabyRabbits() {
   }
 }
 
-// if rabbit enters hunter zone, there is a probability p chance that the rabbit loses a life
-function updateHunterZones() {
-  for (let hunterZone of hunterZones) {
-    if (globalRabbit.position.distanceTo(hunterZone.position) < 4 * radius) {
-      let p = Math.random();
-      if (p < 0.3) {
-        updateLives();
-      }
-    }
-  }
-}
-
 // updates rabbit lives
 function updateLives() {
   if (lives != 0) {
@@ -716,14 +665,13 @@ function updateBearTraps() {
 
 // converts x,y coordinate to 1D (dumb implementation)
 function XYto1D(x, y) {
-  return 10000* x + y;
+  return 10000 * x + y;
 }
 
 // converts 1D coordinate to tileX, tileY (dumb implementation)
 function oneDtoXY(key) {
   return key / 10000, key % 10000;
 }
-
 
 // converts index numbers for X and Y into proper coordinates for hexagons
 // actually adds the hexagons edge to edge, meaning the hexagons wiggle around
@@ -736,7 +684,7 @@ function tileToPosition(tileX, tileY) {
 // this is a helper function to the hex function below. It creates the actual
 // object but hex calls it and then skins the object appropriately.
 function hexGeometry(height, position) {
-  let geo  = new CylinderGeometry(1, 1, height, 6, 1, false);
+  let geo = new CylinderGeometry(1, 1, height, 6, 1, false);
   geo.translate(position.x, height * 0.5, position.y);
 
   return geo;
@@ -744,176 +692,191 @@ function hexGeometry(height, position) {
 
 // sets thresholds for texturing hexes according to height
 const STONE_HEIGHT = MAX_HEIGHT * 0.8;
-const DIRT_HEIGHT = MAX_HEIGHT * 0.7;
-const GRASS_HEIGHT = MAX_HEIGHT * 0.5;
-const SAND_HEIGHT = MAX_HEIGHT * 0.3;
+const DIRT_HEIGHT = MAX_HEIGHT * 0.65;
+const GRASS_HEIGHT = MAX_HEIGHT * 0.35;
+const SAND_HEIGHT = MAX_HEIGHT * WATER_HEIGHT + 0.01;
 const DIRT2_HEIGHT = MAX_HEIGHT * 0;
 
 // instantiates geometries storing aggregate hex groupings for each terrain
-let stoneGeo = new BoxGeometry(0,0,0);
-let dirtGeo = new BoxGeometry(0,0,0);
-let dirt2Geo = new BoxGeometry(0,0,0);
-let sandGeo = new BoxGeometry(0,0,0);
-let grassGeo = new BoxGeometry(0,0,0);
+let stoneGeo = new BoxGeometry(0, 0, 0);
+let dirtGeo = new BoxGeometry(0, 0, 0);
+let dirt2Geo = new BoxGeometry(0, 0, 0);
+let sandGeo = new BoxGeometry(0, 0, 0);
+let grassGeo = new BoxGeometry(0, 0, 0);
 
 // creates a hex at a given height and position and adds them to the proper
 // aggregate geometry that is defined above. Uses aforementioned thresholds.
-function hex(height, position) {
-  let geo = hexGeometry(height, position);
-  positionToHexDict.set(position, [geo, new Vector3(position.x, height, position.y)]);
-  if(height > STONE_HEIGHT) {
+function hex(height, tilePosition) {
+  let geo = hexGeometry(height, tilePosition);
+  positionToHexDict.set(tilePosition, [geo, new Vector3(tilePosition.x, height, tilePosition.y)]);
+  if (height > STONE_HEIGHT) {
     stoneGeo = mergeBufferGeometries([geo, stoneGeo]);
 
-    // load in a terrain asset
-    let randomValue = Math.random();
-    if(randomValue > 0.80) {
-      loadAsset('assets/PP_Rock_Moss_Grown_09.fbx').then((tree) => {
-        tree.traverse(configureMaterials);
-        tree.scale.multiplyScalar(0.004);
+    // if tile is valid and not on rabbit spawn point load in a terrain asset
+    if (checkValidTile(tilePosition) && (tilePosition.x != 0 && tilePosition.y != 0)) {
+      let randomValue = Math.random();
+      if (randomValue > 0.80) {
+        loadAsset('assets/PP_Rock_Moss_Grown_09.fbx').then((rock) => {
+          rock.scale.multiplyScalar(0.004);
 
-        let translationVec = positionToHexDict.get(position)[1];
-        tree.translateX(translationVec.x);
-        tree.translateY(translationVec.y);
-        tree.translateZ(translationVec.z);
+          let translationVec = positionToHexDict.get(tilePosition)[1];
+          rock.translateX(translationVec.x);
+          rock.translateY(translationVec.y);
+          rock.translateZ(translationVec.z);
 
-        scene.add(tree);
-      })
+          hardTerrain.set(tilePosition, 1);
+
+          scene.add(rock);
+        })
+      }
     }
-  } else if(height > DIRT_HEIGHT) {
+
+  } else if (height > DIRT_HEIGHT) {
     dirtGeo = mergeBufferGeometries([geo, dirtGeo]);
 
-    // load in a terrain asset
-    let randomValue = Math.random();
-    if(randomValue > 0.90) {
-      loadAsset('assets/PP_Mushroom_Fantasy_Purple_08.fbx').then((tree) => {
-        tree.traverse(configureMaterials);
-        tree.scale.multiplyScalar(0.08);
+    // if tile is valid and not on rabbit spawn point load in a terrain asset
+    if (checkValidTile(tilePosition) && (tilePosition.x != 0 && tilePosition.y != 0)) {
+      let randomValue = Math.random();
+      if (randomValue > 0.90) {
+        loadAsset('assets/PP_Mushroom_Fantasy_Purple_08.fbx').then((shroom) => {
+          shroom.scale.multiplyScalar(0.08);
 
-        let translationVec = positionToHexDict.get(position)[1];
-        tree.translateX(translationVec.x);
-        tree.translateY(translationVec.y);
-        tree.translateZ(translationVec.z);
+          let translationVec = positionToHexDict.get(tilePosition)[1];
+          shroom.translateX(translationVec.x);
+          shroom.translateY(translationVec.y);
+          shroom.translateZ(translationVec.z);
 
-        scene.add(tree);
-      })
-    } else if(randomValue > 0.80) {
-      loadAsset('assets/PP_Mushroom_Fantasy_Orange_09.fbx').then((tree) => {
-        tree.traverse(configureMaterials);
-        tree.scale.multiplyScalar(0.04);
+          scene.add(shroom);
+        })
+      } else if (randomValue > 0.80) {
+        loadAsset('assets/PP_Mushroom_Fantasy_Orange_09.fbx').then((shroom) => {
+          shroom.scale.multiplyScalar(0.04);
 
-        let translationVec = positionToHexDict.get(position)[1];
-        tree.translateX(translationVec.x);
-        tree.translateY(translationVec.y);
-        tree.translateZ(translationVec.z);
+          let translationVec = positionToHexDict.get(tilePosition)[1];
+          shroom.translateX(translationVec.x);
+          shroom.translateY(translationVec.y);
+          shroom.translateZ(translationVec.z);
 
-        scene.add(tree);
-      })
+          scene.add(shroom);
+        })
+      }
     }
-  } else if(height > GRASS_HEIGHT) {
+
+  } else if (height > GRASS_HEIGHT) {
     grassGeo = mergeBufferGeometries([geo, grassGeo]);
 
-    // if we were to add other geometries procedurally to tiles, we would do
-    // it like so. We would merge it to the aggregate geometry with the appropriate
-    // texture. Everything is added to the scene only after everything is divided
-    // appropriately by the textures they use.
-    // grassGeo = mergeBufferGeometries([grassGeo, tree(height, position)]);
+    // if tile is valid and not on rabbit spawn point load in a terrain asset
+    if (checkValidTile(tilePosition) && (tilePosition.x != 0 && tilePosition.y != 0)) {
+      let randomValue = Math.random();
+      if (randomValue > 0.97) {
+        loadAsset('assets/PP_Birch_Tree_05.fbx').then((tree) => {
+          tree.scale.multiplyScalar(0.015);
 
-    // load in a terrain asset
-    let randomValue = Math.random();
-    if(randomValue > 0.97) {
-      loadAsset('assets/PP_Birch_Tree_05.fbx').then((tree) => {
-        tree.traverse(configureMaterials);
-        tree.scale.multiplyScalar(0.015);
+          let translationVec = positionToHexDict.get(tilePosition)[1];
+          tree.translateX(translationVec.x);
+          tree.translateY(translationVec.y);
+          tree.translateZ(translationVec.z);
 
-        let translationVec = positionToHexDict.get(position)[1];
-        tree.translateX(translationVec.x);
-        tree.translateY(translationVec.y);
-        tree.translateZ(translationVec.z);
+          hardTerrain.set(tilePosition, 1);
 
-        scene.add(tree);
-      })
-    } else if(randomValue > 0.94) {
-      loadAsset('assets/PP_Tree_02.fbx').then((tree) => {
-        tree.traverse(configureMaterials);
-        tree.scale.multiplyScalar(0.015);
+          scene.add(tree);
+        })
+      } else if (randomValue > 0.94) {
+        loadAsset('assets/PP_Tree_02.fbx').then((tree) => {
+          tree.scale.multiplyScalar(0.015);
 
-        let translationVec = positionToHexDict.get(position)[1];
-        tree.translateX(translationVec.x);
-        tree.translateY(translationVec.y);
-        tree.translateZ(translationVec.z);
+          let translationVec = positionToHexDict.get(tilePosition)[1];
+          tree.translateX(translationVec.x);
+          tree.translateY(translationVec.y);
+          tree.translateZ(translationVec.z);
 
-        scene.add(tree);
-      })
-    } else if(randomValue > 0.92) {
-      loadAsset('assets/PP_Hyacinth_04.fbx').then((tree) => {
-        tree.traverse(configureMaterials);
-        tree.scale.multiplyScalar(0.05);
+          hardTerrain.set(tilePosition, 1);
 
-        let translationVec = positionToHexDict.get(position)[1];
-        tree.translateX(translationVec.x);
-        tree.translateY(translationVec.y);
-        tree.translateZ(translationVec.z);
+          scene.add(tree);
+        })
+      } else if (randomValue > 0.92) {
+        loadAsset('assets/PP_Hyacinth_04.fbx').then((flower) => {
+          flower.scale.multiplyScalar(0.05);
 
-        scene.add(tree);
-      })
-    } else if(randomValue > 0.82) {
-      loadAsset('assets/PP_Grass_11.fbx').then((tree) => {
-        tree.traverse(configureMaterials);
-        tree.scale.multiplyScalar(0.05);
+          let translationVec = positionToHexDict.get(tilePosition)[1];
+          flower.translateX(translationVec.x);
+          flower.translateY(translationVec.y);
+          flower.translateZ(translationVec.z);
 
-        let translationVec = positionToHexDict.get(position)[1];
-        tree.translateX(translationVec.x);
-        tree.translateY(translationVec.y);
-        tree.translateZ(translationVec.z);
+          scene.add(flower);
+        })
+      } else if (randomValue > 0.82) {
+        loadAsset('assets/PP_Grass_11.fbx').then((grass) => {
+          grass.scale.multiplyScalar(0.05);
 
-        scene.add(tree);
-      })
-    } else if(randomValue > 0.81) {
-      loadAsset('assets/PP_Rock_Pile_Forest_Moss_05.fbx').then((tree) => {
-        tree.traverse(configureMaterials);
-        tree.scale.multiplyScalar(0.004);
+          let translationVec = positionToHexDict.get(tilePosition)[1];
+          grass.translateX(translationVec.x);
+          grass.translateY(translationVec.y);
+          grass.translateZ(translationVec.z);
 
-        let translationVec = positionToHexDict.get(position)[1];
-        tree.translateX(translationVec.x);
-        tree.translateY(translationVec.y);
-        tree.translateZ(translationVec.z);
+          scene.add(grass);
+        })
+      } else if (randomValue > 0.81) {
+        loadAsset('assets/PP_Rock_Pile_Forest_Moss_05.fbx').then((rock) => {
+          rock.scale.multiplyScalar(0.004);
 
-        scene.add(tree);
-      })
-    } else if(randomValue > 0.71) {
-      loadAsset('assets/PP_Grass_15.fbx').then((tree) => {
-        tree.traverse(configureMaterials);
-        tree.scale.multiplyScalar(0.05);
+          let translationVec = positionToHexDict.get(tilePosition)[1];
+          rock.translateX(translationVec.x);
+          rock.translateY(translationVec.y);
+          rock.translateZ(translationVec.z);
 
-        let translationVec = positionToHexDict.get(position)[1];
-        tree.translateX(translationVec.x);
-        tree.translateY(translationVec.y);
-        tree.translateZ(translationVec.z);
+          hardTerrain.set(tilePosition, 1);
 
-        scene.add(tree);
-      })
+          scene.add(rock);
+        })
+      } else if (randomValue > 0.71) {
+        loadAsset('assets/PP_Grass_15.fbx').then((grass) => {
+          grass.scale.multiplyScalar(0.05);
+
+          let translationVec = positionToHexDict.get(tilePosition)[1];
+          grass.translateX(translationVec.x);
+          grass.translateY(translationVec.y);
+          grass.translateZ(translationVec.z);
+
+          scene.add(grass);
+        })
+      }
     }
-  } else if(height > SAND_HEIGHT) {
+
+  } else if (height > SAND_HEIGHT) {
     sandGeo = mergeBufferGeometries([geo, sandGeo]);
 
-    // load in a terrain asset
-    let randomValue = Math.random();
-    if(randomValue > 0.90) {
-      loadAsset('assets/PP_Rock_Moss_Grown_11.fbx').then((tree) => {
-        tree.traverse(configureMaterials);
-        tree.scale.multiplyScalar(0.004);
+    // if tile is valid and not on rabbit spawn point load in a terrain asset
+    if (checkValidTile(tilePosition) && (tilePosition.x != 0 && tilePosition.y != 0)) {
+      let randomValue = Math.random();
+      if (randomValue > 0.90) {
+        loadAsset('assets/PP_Rock_Moss_Grown_11.fbx').then((rock) => {
+          rock.scale.multiplyScalar(0.004);
 
-        let translationVec = positionToHexDict.get(position)[1];
-        tree.translateX(translationVec.x);
-        tree.translateY(translationVec.y);
-        tree.translateZ(translationVec.z);
+          let translationVec = positionToHexDict.get(tilePosition)[1];
+          rock.translateX(translationVec.x);
+          rock.translateY(translationVec.y);
+          rock.translateZ(translationVec.z);
 
-        scene.add(tree);
-      })
+          hardTerrain.set(tilePosition, 1);
+
+          scene.add(rock);
+        })
+      }
     }
-  } else if(height > DIRT2_HEIGHT) {
+
+  } else if (height > DIRT2_HEIGHT) {
     dirt2Geo = mergeBufferGeometries([geo, dirt2Geo]);
   }
+}
+
+// helper function for traversing Map by value
+function getByValue(map, searchValue) {
+  for (let [key, value] of map.entries()) {
+    if (value === searchValue)
+      return key;
+  }
+  return undefined;
 }
 
 // used to return the total aggregate geometry that is rendered by the renderer.

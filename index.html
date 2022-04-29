@@ -1,27 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Document</title>
+  <title>Rabbit Rescue</title>
 
-  <label id="YourName">Your Life</label>
-    <div id="YourLife">
-      <div id="Number of Lives">❤️❤️❤️</div>
-    </div>
+  <link rel="stylesheet" href="src/styles.css">
 
-  <style>
-    html, body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "../node_modules/three/build/three.module.js",
+        "OrbitControls": "../node_modules/three/examples/jsm/controls/OrbitControls.js",
+        "FBXLoader": "../node_modules/three/examples/jsm/loaders/FBXLoader.js",
+        "RGBELoader": "../node_modules/three/examples/jsm/loaders/RGBELoader.js",
+        "BufferGeometryUtils": "../node_modules/three/examples/jsm/utils/BufferGeometryUtils.js",
+        "Water": "../node_modules/three/examples/jsm/objects/Water2.js"
+      }
     }
-  </style>
+  </script>
 
   <script type="module" src="src/index.js"></script>
 </head>
+
 <body>
 
+  <div id="hitpoints">
+    Lives Remaining: ❤️❤️❤️
+  </div>
+
+  <!-- Script for disabling arrow key scrolling of the view window -->
+  <script>
+    window.addEventListener("keydown", function(e) {
+      if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].indexOf(e.code) > -1) {
+        e.preventDefault();
+      }
+    }, false);
+  </script>
+
 </body>
+
 </html>
