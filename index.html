@@ -8,6 +8,58 @@
   <title>Rabbit Rescue</title>
 
   <link rel="stylesheet" href="src/styles.css">
+</head>
+
+<body>
+  <div id="initialOverlay"> </div>
+
+  <div id="music">
+    <iframe id="player" style="border-radius:8px" src="https://open.spotify.com/embed/playlist/7ers7j26MTgkKChHhb6ZhJ?utm_source=generator" width="100%" height="80" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe>
+  </div>
+
+  <div id="info">
+    <div id="babies">
+      <h1 id="babiesRemaining"> 0 </h1>
+      <h3> BABIES LEFT </h3>
+    </div>
+
+    <div id="score">
+      <h1 id="totalScore"> 0 </h1>
+      <h3> SCORE </h3>
+    </div>
+
+    <div id="life">
+      <h1 id="hitpoints"> 10 </h1>
+      <h3> HEALTH </h3>
+    </div>
+  </div>
+
+  <button id="start"> START </button>
+
+  <div id="startFlavorText">
+    TO THE RESCUE!
+  </div>
+
+  <div id="status">
+    RABBIT RESCUE <br>
+    <div id="instructions">
+      <strong> Movement </strong> <br>
+      You control your rabbit by selecting a direction with your arrow keys, then
+      pressing space when you want to jump in that direction. You <em> cannot </em>
+      go into the water or onto tiles with rocks or trees. <br> <br>
+      <strong> Scoring Rules </strong> <br>
+      You will gain 10 points for rescuing a baby rabbit. 0.25 points for surviving
+      a turn (but you are rewarded for taking fewer turns before ending the game). You
+      will also lose points for being caught by a fox or bear. <br> <br>
+      <strong> Health </strong> <br>
+      You will lose 4 health if you are caught by a fox, and 8 health if you are caught
+      by a bear. So don't get caught. (Hint: They also can't go in the water or onto
+      tiles with trees or rocks) <br> <br>
+      <strong> Winning the Game </strong> <br>
+      There will be a burrow somewhere on the map indicated by a rotating star.
+      Once you have decided that you want to end the game, just go to the burrow
+      and you will see your score. To restart, refresh the page.
+  </div>
 
   <script type="importmap">
     {
@@ -17,23 +69,18 @@
         "FBXLoader": "../node_modules/three/examples/jsm/loaders/FBXLoader.js",
         "RGBELoader": "../node_modules/three/examples/jsm/loaders/RGBELoader.js",
         "BufferGeometryUtils": "../node_modules/three/examples/jsm/utils/BufferGeometryUtils.js",
-        "Water": "../node_modules/three/examples/jsm/objects/Water2.js"
+        "Water": "../node_modules/three/examples/jsm/objects/Water2.js",
+        "EffectComposer": "../node_modules/three/examples/jsm/postprocessing/EffectComposer.js",
+        "Render": "../node_modules/three/examples/jsm/postprocessing/RenderPass.js",
+        "Bloom": "../node_modules/three/examples/jsm/postprocessing/UnrealBloomPass.js",
+        "Stats": "../node_modules/stats.js/src/Stats.js",
+        "Tween": "../node_modules/three/examples/jsm/libs/tween.module.min.js",
+        "CSS2D": "../node_modules/three/examples/jsm/renderers/CSS2DRenderer.js"
       }
     }
   </script>
 
   <script type="module" src="src/index.js"></script>
-</head>
-
-<body>
-
-  <div id="hitpoints">
-    Lives Remaining: ❤️❤️❤️❤️❤️❤️❤️❤️❤️❤️
-  </div>
-  <div id="totalScore">
-    Total Score: 0
-  </div>
-
 
   <!-- Script for disabling arrow key scrolling of the view window -->
   <script>
@@ -42,6 +89,10 @@
         e.preventDefault();
       }
     }, false);
+
+    window.addEventListener("onLoad", function() {
+      document.getElementById("player").play();
+    });
   </script>
 
 </body>

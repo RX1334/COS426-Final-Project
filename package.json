@@ -1,0 +1,27 @@
+{
+  "name": "rabbitrescue",
+  "version": "1.0.0",
+  "description": "Simple ThreeJS game",
+  "main": "index.html",
+  "dependencies": {
+    "stats.js": "^0.17.0",
+    "three": "^0.139.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RX1334/COS426-Final-Project.git"
+  },
+  "keywords": [
+    "threejs"
+  ],
+  "author": "Ryan Xia, Sunny Yoo",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/RX1334/COS426-Final-Project/issues"
+  },
+  "homepage": "https://github.com/RX1334/COS426-Final-Project#readme"
+}
