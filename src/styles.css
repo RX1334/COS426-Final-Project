@@ -1,11 +1,11 @@
 @font-face {
     font-family: Radio-Bold;
-    src: url("./type/RadioCanada-Bold.ttf");
+    src: url("/type/RadioCanada-Bold.ttf");
 }
 
 @font-face {
     font-family: Radio-Regular;
-    src: url("./type/RadioCanada-Regular.ttf");
+    src: url("/type/RadioCanada-Regular.ttf");
 }
 
 h1 {
